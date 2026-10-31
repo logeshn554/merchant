@@ -26,6 +26,8 @@ Deploy the shared Firebase service Functions once against the canonical order da
 
 Container deployment reads .env.production.local at runtime; place the API behind HTTPS ingress. Use managed workload identity for Firebase Application Default Credentials, or explicitly mount an operator-managed credential file read-only. The image does not include credentials. PostgreSQL is an externally configured persistent database, not disposable sample storage.
 
-## Status
+## Verified development status
 
-Production application source generated. No tests were run, as requested. No deployment, real SMS, live payment or fulfillment acceptance was performed. Missing owner/provider configuration and release evidence must be supplied before this can be called a verified production deployment. No ready production APK is currently supplied; rebuild after configuring the project.
+The source is a development/debug checkpoint, not a production release. The current merchant UI has been professionally restyled with shared AllGo tokens, a responsive sidebar/bottom-navigation shell, a desktop order board, mobile order tabs, semantic order cards, and existing server-backed merchant workflows.
+
+Local checks completed: `npm run lint`, `npm test` (26 UI plus 48 Functions tests), and `npm run build:development`. The browser entry screen was reviewed at 360px, 768px and 1280px. Authenticated emulator flow, native device behavior, real push/SMS/payment/payout providers, and signed release acceptance were not run.

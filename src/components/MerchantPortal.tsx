@@ -1,13 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { 
-  ShoppingBag, CheckCircle2, Clock, Store, Utensils, DollarSign, LifeBuoy,
-  PackageCheck, Bike, ChevronRight, Star, Ticket, History, MessageSquare,
-  BarChart3, TrendingUp, Settings, Award, MoreHorizontal
-} from 'lucide-react';
+import { CheckCircle2, LifeBuoy, PackageCheck, Bike, ChevronRight, Star, Ticket, History, MessageSquare, TrendingUp, Award } from 'lucide-react';
 import { Booking, MenuItem, GroceryProduct } from '../types';
 import { formatPaise } from '../utils/moneyFormatter';
 
-import { playOrderChime, startRepeatingAlert, stopRepeatingAlert } from '../utils/merchantAlertChime';
+import { startRepeatingAlert, stopRepeatingAlert } from '../utils/merchantAlertChime';
+import { MerchantLiveRegion } from '../design-system/MerchantStates';
 
 import MerchantHoursEditor from './MerchantHoursEditor';
 import MerchantSettlements from './MerchantSettlements';
@@ -148,6 +145,28 @@ export default function MerchantPortal({ activeBookings, userId, merchantId, mer
       stopRepeatingAlert();
     };
   }, [foodOrders, groceryOrders, activeMerchantType]);
+
+  useEffect(() => {
+    const originalTitle = document.title;
+    const pending = (activeMerchantType === 'restaurant' ? foodOrders : groceryOrders).filter(order => order.status === 'pending').length;
+    if (!pending) {
+      document.title = originalTitle.replace(/^\(\d+\)\s*/, '');
+      return;
+    }
+    let active = true;
+    let visible = true;
+    const interval = window.setInterval(() => {
+      if (!active) return;
+      visible = !visible;
+      document.title = visible ? `(${pending}) New order${pending === 1 ? '' : 's'} · AllGo Merchant` : 'AllGo Merchant';
+    }, 1000);
+    document.title = `(${pending}) New order${pending === 1 ? '' : 's'} · AllGo Merchant`;
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      document.title = originalTitle.replace(/^\(\d+\)\s*/, '');
+    };
+  }, [activeMerchantType, foodOrders, groceryOrders]);
 
   // Daily Summary (Server-aggregated bounded data)
   const [dailySummary, setDailySummary] = useState<{ completedToday: number; grossRevenueToday: number }>({
@@ -363,6 +382,7 @@ export default function MerchantPortal({ activeBookings, userId, merchantId, mer
         </header>
 
         <BookingNotificationNotice {...notification} onDismiss={notification.dismiss}/>
+        {((activeMerchantType === 'restaurant' ? foodOrders : groceryOrders).some(order => order.status === 'pending')) && <MerchantLiveRegion>New order waiting for your response.</MerchantLiveRegion>}
         <div className="merchant-overview">
           <strong>{activeOutlet?.name} · {activeMerchantType === 'restaurant' ? 'Restaurant operations' : 'Grocery operations'}</strong>
           {canManageOrders && <span>{(activeMerchantType === 'restaurant' ? foodOrders : groceryOrders).length} active orders · {completedToday} completed today</span>}

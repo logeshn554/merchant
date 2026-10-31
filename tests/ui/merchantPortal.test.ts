@@ -49,9 +49,12 @@ test("merchant ratings show verified order feedback inside the order-authorized 
 
 // TASK-106: Incoming orders queue
 test("incoming orders queue plays chime for new orders and displays client, items and status", () => {
-  assert.match(portal, /playOrderChime/);
+  assert.match(portal, /startRepeatingAlert/);
+  assert.match(portal, /MerchantLiveRegion/);
+  assert.match(portal, /New order waiting for your response/);
   assert.match(portal, /Incoming Orders/);
-  assert.match(portal, /Client:.*ord\.customerName/);
+  assert.match(portal, /ord\.customerName\.split\(' '\)\[0\]/);
+  assert.match(portal, /merchant-payment-badge/);
   assert.match(portal, /handleAcceptMerchantOrder/);
   assert.match(portal, /Accept & Start Preparation/);
 });
