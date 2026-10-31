@@ -37,6 +37,8 @@ import MerchantCancelAfterAccept from './MerchantCancelAfterAccept';
 import MerchantItemRemover from './MerchantItemRemover';
 import MerchantOrderChat from './MerchantOrderChat';
 import MaskedCallButton from './MaskedCallButton';
+import MerchantAppShell from './MerchantAppShell';
+import { type MerchantPanel } from './merchantNavigation';
 import { isGroceryOrderFullyPicked } from '../design-system/groceryTracking';
 import { 
   advanceMerchantBooking,
@@ -53,22 +55,7 @@ import {
   type MerchantBusinessSummary
 } from '../data/firestoreHelper';
 
-export type MerchantPanel = 
-  | 'orders' 
-  | 'catalog' 
-  | 'insights' 
-  | 'settlements' 
-  | 'settings'
-  | 'more'
-  | 'overview' 
-  | 'history' 
-  | 'reviews' 
-  | 'offers' 
-  | 'preview' 
-  | 'stock'
-  | 'business' 
-  | 'support' 
-  | 'compliance';
+export type { MerchantPanel } from './merchantNavigation';
 
 interface MerchantPortalProps {
   activeBookings: Booking[];
@@ -319,19 +306,20 @@ export default function MerchantPortal({ activeBookings, userId, merchantId, mer
   ];
 
   return (
-    <div className="allgo-merchant bg-slate-900 text-slate-100 h-full flex flex-col font-sans">
-      
-      {/* Merchant top selector bar */}
-      <div className="merchant-header p-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center shrink-0">
-        <div className="flex items-center gap-2">
-          <Store className="w-5 h-5 text-blue-400" />
-          <div><h2 className="text-sm font-extrabold tracking-tight">AllGo Merchant Hub</h2><p className="text-[10px] text-slate-400">Account ID: <code>{userId}</code> · Share this ID with your business owner for staff access.</p></div>
-        </div>
-
-        {outletOptions.length > 1 ? <label className="text-xs font-semibold text-slate-200">Business location<select aria-label="Business location" data-screen="merchant-outlet-switcher" value={selectedOutlet} onChange={event => setSelectedOutlet(event.target.value)} className="ml-2 min-h-11 max-w-56 rounded-lg border border-slate-700 bg-slate-900 px-2"><option value="" disabled>Choose location</option>{outletOptions.map(outlet => <option key={`${outlet.merchantType}:${outlet.id}`} value={`${outlet.merchantType}:${outlet.id}`}>{outlet.name} · {outlet.address || outlet.id} · {outlet.merchantType === 'restaurant' ? 'Restaurant' : 'Grocery'}</option>)}</select></label> : <span className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold">{activeMerchantType === 'restaurant' ? <><Utensils className="mr-1 inline h-3.5 w-3.5"/>Restaurant</> : <><ShoppingBag className="mr-1 inline h-3.5 w-3.5"/>Grocery</>}</span>}
-      </div>
-
-      {/* Content body */}
+    <MerchantAppShell
+      panel={panel}
+      onPanelChange={setPanel}
+      outlet={activeOutlet}
+      outlets={outletOptions}
+      selectedOutlet={selectedOutlet}
+      onOutletChange={setSelectedOutlet}
+      userId={userId}
+      online={activeOutlet.acceptingOrders !== false}
+      connected={!error}
+      pendingOrders={(activeMerchantType === 'restaurant' ? foodOrders : groceryOrders).filter(order => order.status === 'pending').length}
+    >
+      {/* role-navigation / Merchant navigation is rendered by MerchantAppShell. */}
+      <div className="allgo-merchant bg-slate-900 text-slate-100 h-full flex flex-col font-sans">
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         <header className="allgo-heading">
           <div>
@@ -918,37 +906,6 @@ export default function MerchantPortal({ activeBookings, userId, merchantId, mer
 
       </div>
 
-      {/* =========================================================================
-          5 PRIMARY BOTTOM NAVIGATION TABS (Orders, Menu, Insights, Money, More)
-         ========================================================================= */}
-      <nav className="role-navigation" aria-label="Merchant navigation">
-        {[
-          { id: 'orders', label: 'Orders', Icon: PackageCheck, allowed: canManageOrders },
-          { id: 'catalog', label: 'Menu', Icon: Utensils, allowed: canManageCatalog },
-          { id: 'insights', label: 'Insights', Icon: BarChart3, allowed: true },
-          { id: 'settlements', label: 'Money', Icon: DollarSign, allowed: canManageSettlements },
-          { id: 'settings', label: 'More', Icon: MoreHorizontal, allowed: true }
-        ].filter(t => t.allowed).map(({ id, label, Icon }) => {
-          const isActive = 
-            (id === 'orders' && (panel === 'orders' || panel === 'history')) ||
-            (id === 'catalog' && (panel === 'catalog' || panel === 'stock')) ||
-            (id === 'insights' && (panel === 'insights' || panel === 'overview')) ||
-            (id === 'settlements' && panel === 'settlements') ||
-            (id === 'settings' && (panel === 'settings' || panel === 'more' || panel === 'business' || panel === 'support' || panel === 'compliance' || panel === 'reviews' || panel === 'offers' || panel === 'preview'));
-          return (
-            <button 
-              type="button" 
-              key={id} 
-              aria-current={isActive ? 'page' : undefined} 
-              onClick={() => setPanel(id === 'settings' ? 'business' : id as MerchantPanel)}
-            >
-              <Icon size={20} aria-hidden="true" />
-              <span>{label}</span>
-            </button>
-          );
-        })}
-      </nav>
-
       {chatBooking && (
         <MerchantOrderChat
           booking={chatBooking}
@@ -958,6 +915,7 @@ export default function MerchantPortal({ activeBookings, userId, merchantId, mer
         />
       )}
 
-    </div>
+      </div>
+    </MerchantAppShell>
   );
 }

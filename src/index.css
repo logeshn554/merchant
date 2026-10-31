@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./design-system/tokens.css";
 @import "./design-system/merchant-components.css";
+@import "./components/merchantShell.css";
 @import "leaflet/dist/leaflet.css";
 
 :root {
