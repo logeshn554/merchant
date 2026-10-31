@@ -1,0 +1,197 @@
+:root {
+  --allgo-safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --allgo-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --allgo-space-5: 20px;
+  --allgo-space-8: 32px;
+  --allgo-type-display: clamp(36px, 10vw, 48px);
+  --allgo-type-headline: clamp(30px, 8vw, 36px);
+  --allgo-type-title: clamp(24px, 5vw, 30px);
+  --allgo-type-subtitle: 20px;
+  --allgo-type-body: 14px;
+  --allgo-type-callout: 14px;
+  --allgo-type-caption: 12px;
+  --allgo-type-tiny: 11px;
+  --allgo-type-input: 16px;
+  --allgo-line-tight: 1.2;
+  --allgo-line-title: 1.35;
+  --allgo-line-body: 1.5;
+  --allgo-line-relaxed: 1.6;
+  --allgo-weight-regular: 400;
+  --allgo-weight-medium: 600;
+  --allgo-weight-bold: 700;
+  --allgo-weight-heavy: 800;
+  --allgo-radius-control: 12px;
+  --allgo-danger: var(--allgo-error);
+  --allgo-danger-soft: #fff0f3;
+  --allgo-warning-soft: #fff7e5;
+  --allgo-shadow-overlay: 0 16px 48px rgb(32 29 43 / 16%);
+  --allgo-brand: #5130ef;
+  --allgo-primary: var(--allgo-brand);
+  --allgo-primary-strong: #4021cc;
+  --stitch-soft: #f3efff;
+  --allgo-ink: #1b1726;
+  --allgo-text: var(--allgo-ink);
+  --allgo-muted: #696277;
+  --allgo-surface: #ffffff;
+  --allgo-canvas: #f8f7fc;
+  --allgo-border: #ebe8f2;
+  --allgo-success: #16744e;
+  --allgo-warning: #9b5909;
+  --allgo-error: #b42338;
+  --allgo-space-1: 4px;
+  --allgo-space-2: 8px;
+  --allgo-space-3: 12px;
+  --allgo-space-4: 16px;
+  --allgo-space-6: 24px;
+  --allgo-shadow-card: 0 4px 18px rgb(32 29 43 / 6%);
+  --allgo-card-padding: 20px;
+  --allgo-card-gap: 12px;
+  --allgo-focus: #7659f6;
+  --allgo-food: #ee7d43;
+  --allgo-grocery: #20835a;
+  --allgo-ride: #4164c8;
+  --allgo-delivery: #7659c9;
+  --allgo-radius: 16px;
+  --allgo-radius-card: 20px;
+  --allgo-touch: 44px;
+  --allgo-touch-target: var(--allgo-touch);
+  --allgo-control-height: 48px;
+  --allgo-control-radius: var(--allgo-radius-control);
+}
+
+.allgo-navigation {
+  width: 100%;
+  max-width: 448px;
+  margin-inline: auto;
+  display: flex;
+  flex: none;
+  border-top: 1px solid var(--allgo-border);
+  background: var(--allgo-surface);
+  padding: 6px 4px max(6px, var(--allgo-safe-bottom));
+}
+
+.allgo-navigation button {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: var(--allgo-touch);
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
+  color: var(--allgo-muted);
+  font-size: 12px;
+}
+
+.allgo-navigation button[aria-current="page"] {
+  color: var(--allgo-primary);
+  font-weight: 700;
+}
+
+.allgo-navigation-badge {
+  position: absolute;
+  top: 0;
+  right: 12%;
+  border-radius: 12px;
+  padding: 0 5px;
+  background: var(--allgo-primary);
+  color: white;
+}
+
+.allgo-unavailable {
+  border: 1px solid var(--allgo-border);
+  border-radius: var(--allgo-radius);
+  padding: 20px;
+  background: var(--allgo-surface);
+  color: var(--allgo-text);
+}
+
+.allgo-unavailable p {
+  margin: 12px 0;
+  color: var(--allgo-muted);
+  line-height: 1.6;
+}
+
+.allgo-unavailable button {
+  min-height: var(--allgo-touch);
+  padding: 10px 16px;
+  border: 1px solid var(--allgo-border);
+  border-radius: 12px;
+}
+
+.allgo-customer button {
+  min-height: var(--allgo-touch);
+}
+
+.allgo-customer button:disabled {
+  cursor: not-allowed;
+}
+
+.allgo-action {
+  min-height: 52px;
+  border-radius: var(--allgo-radius-control);
+  background: var(--allgo-primary);
+  font-size: var(--allgo-type-callout);
+}
+
+.allgo-action.secondary {
+  background: var(--stitch-soft);
+  color: var(--allgo-primary-strong);
+}
+
+.allgo-card {
+  padding: var(--allgo-card-padding);
+  border: 1px solid var(--allgo-border);
+  border-radius: var(--allgo-radius-card);
+  background: var(--allgo-surface);
+  box-shadow: var(--allgo-shadow-card);
+}
+
+.allgo-workspace {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--allgo-canvas);
+  color: var(--allgo-text);
+}
+
+.allgo-workspace-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--allgo-surface);
+  border-bottom: 1px solid var(--allgo-border);
+  padding: max(12px, var(--allgo-safe-top)) 16px 12px;
+}
+
+.allgo-workspace-header button {
+  min-height: var(--allgo-touch);
+  min-width: var(--allgo-touch);
+  display: grid;
+  place-items: center;
+}
+
+.allgo-workspace-main {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  margin-inline: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+
+  .allgo-page {
+    animation: none;
+  }
+}

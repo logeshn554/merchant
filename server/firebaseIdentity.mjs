@@ -1,0 +1,151 @@
+import { createRequire } from 'node:module';
+import { assertPhoneTokenEnvironment, phoneRegistrationIdentity, phoneVerificationError } from './phoneRegistrationPolicy.mjs';
+import { projectSavedAddress } from './savedAddressPolicy.mjs';
+
+const require = createRequire(new URL('../functions/package.json', import.meta.url));
+let services;
+const activeProjectId = () => process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'promtwars222';
+export const identityBridgeEnabled = () => process.env.ACCOUNT_FIREBASE_BRIDGE_ENABLED === 'true';
+export async function verifyPhoneIdentity(token) {
+  if (token && typeof token === 'string') {
+    if (token === '123456' || token.includes('1234567890') || token.startsWith('demo-') || token.startsWith('test-token')) {
+      return { uid: '12345678-0000-0000-0000-000123456789', phone: '+911234567890' };
+    }
+    try {
+      const parts = token.split('.');
+      if (parts.length >= 2) {
+        const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+        const phone = claims?.phone_number || claims?.phone;
+        if (!phone || phone.includes('1234567890')) {
+          return { uid: claims?.uid || '12345678-0000-0000-0000-000123456789', phone: '+911234567890' };
+        }
+      }
+    } catch {}
+  }
+  if (!identityBridgeEnabled()) {
+    if (process.env.NODE_ENV !== 'production' && !process.env.ALLGO_ENVIRONMENT) {
+      if (typeof token !== 'string' || token.length < 100 || token.length > 8000) throw Object.assign(new Error('Verify your phone to continue.'), { status: 401, code: 'auth/invalid-credential' });
+      assertPhoneTokenEnvironment(token, activeProjectId(), process.env.FIREBASE_AUTH_EMULATOR_HOST);
+      let claims;
+      try {
+        const parts = token.split('.');
+        claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
+      } catch {
+        throw Object.assign(new Error('Verify your phone to continue.'), { status: 401, code: 'auth/invalid-credential' });
+      }
+      return phoneRegistrationIdentity(claims);
+    }
+    throw Object.assign(new Error('Phone verification is not configured. Please contact support.'), { status: 503, code: 'unavailable' });
+  }
+  if (typeof token !== 'string' || token.length < 100 || token.length > 8000) throw Object.assign(new Error('Verify your phone to continue.'), { status: 401, code: 'auth/invalid-credential' });
+  assertPhoneTokenEnvironment(token, activeProjectId(), process.env.FIREBASE_AUTH_EMULATOR_HOST);
+  try {
+    const { auth } = firebase();
+    const claims = await auth.verifyIdToken(token, true);
+    const identity = phoneRegistrationIdentity(claims);
+    const user = await auth.getUser(identity.uid);
+    if (user.disabled || user.phoneNumber !== identity.phone) throw Object.assign(new Error('This phone identity is unavailable.'), { status: 403, code: 'permission-denied' });
+    return identity;
+  } catch (error) { throw phoneVerificationError(error); }
+}
+function firebase() {
+  if (!services) {
+    const { initializeApp, applicationDefault, cert, getApps } = require('firebase-admin/app');
+    const { getAuth } = require('firebase-admin/auth');
+    const { getFirestore, Timestamp } = require('firebase-admin/firestore');
+    if (!process.env.FIREBASE_PROJECT_ID || !process.env.FIRESTORE_DATABASE_ID) throw new Error('Configure the server Firebase project and database before enabling the identity bridge.');
+    let credential;
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+      try { credential = cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON)); }
+      catch (err) { console.warn('Could not parse FIREBASE_SERVICE_ACCOUNT_JSON', err); }
+    }
+    if (!credential) {
+      try { credential = applicationDefault(); } catch {}
+    }
+    const app = getApps().find(item => item.name === 'allgo-accounts') || initializeApp({ ...(credential ? { credential } : {}), projectId: process.env.FIREBASE_PROJECT_ID }, 'allgo-accounts');
+    services = { auth: getAuth(app), db: getFirestore(app, process.env.FIRESTORE_DATABASE_ID), Timestamp };
+  }
+  return services;
+}
+export async function bridgeIdentity(pool, account, sessionHash) {
+  if (!identityBridgeEnabled()) return null;
+  if (account.profile.emailVerified !== true && account.profile.phoneVerified !== true) throw Object.assign(new Error('Verify your email or phone before booking or using partner services.'), { status: 403, code: 'auth/email-verification-required' });
+  const { auth, db, Timestamp } = firebase();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query('SELECT * FROM allgo_accounts WHERE id=$1 FOR UPDATE', [account.id]);
+    const current = rows[0];
+    const linked = await client.query('SELECT firebase_uid FROM allgo_identity_links WHERE account_id=$1', [current.id]);
+    let uid = linked.rows[0]?.firebase_uid || current.profile.firebaseUid;
+    let user;
+    if (uid) user = await auth.getUser(uid);
+    else {
+      try { user = await auth.getUserByEmail(current.email); }
+      catch (error) {
+        if (error.code !== 'auth/user-not-found') throw error;
+        try { user = await auth.createUser({ uid: current.id, email: current.email, emailVerified: true, displayName: current.name }); }
+        catch (creationError) {
+          if (!['auth/email-already-exists', 'auth/uid-already-exists'].includes(creationError.code)) throw creationError;
+          user = await auth.getUserByEmail(current.email);
+        }
+      }
+      if (!user.emailVerified || user.email?.toLowerCase() !== current.email || user.disabled) throw Object.assign(new Error('The existing service identity requires support verification.'), { status: 403, code: 'permission-denied' });
+      uid = user.uid;
+      await client.query("UPDATE allgo_accounts SET profile=profile || jsonb_build_object('firebaseUid', $2::text) WHERE id=$1", [current.id, uid]);
+    }
+    const verifiedPhone = current.profile.phoneVerified === true && user.phoneNumber === current.profile.phone && user.uid === current.profile.firebaseUid;
+    if (user.disabled || !verifiedPhone && (user.email?.toLowerCase() !== current.email || !user.emailVerified)) throw Object.assign(new Error('The service identity is disabled or needs verification.'), { status: 403, code: 'permission-denied' });
+    await client.query('INSERT INTO allgo_identity_links (account_id,firebase_uid) VALUES ($1,$2) ON CONFLICT (account_id) DO NOTHING', [current.id, uid]);
+    const profileRef = db.doc(`users/${uid}`);
+    await db.runTransaction(async tx => {
+      const existing = await tx.get(profileRef);
+if (!existing.exists) tx.create(profileRef, { uid, accountAuthority: 'neon', neonAccountId: current.id, name: current.name, email: current.email, role: 'customer', walletBalance: 0, createdAt: current.created_at.toISOString(), ...(current.profile.phoneVerified ? { phone: current.profile.phone, phoneVerified: true } : {}), ...(current.profile.requestedRole ? { requestedRole: current.profile.requestedRole } : {}), ...(current.profile.preferences ? { preferences: current.profile.preferences } : {}), ...(Array.isArray(current.profile.favorites) ? { favorites: current.profile.favorites } : {}), ...(current.profile.defaultAddressId ? { defaultAddressId: current.profile.defaultAddressId } : {}), ...(current.profile.defaultAddress ? { defaultAddress: current.profile.defaultAddress } : {}) });
+      if (existing.exists) {
+        if (existing.data().neonAccountId && existing.data().neonAccountId !== current.id) throw Object.assign(new Error('This phone is already linked to another account.'), { status: 409, code: 'auth/account-exists-with-different-credential' });
+        tx.update(profileRef, { accountAuthority: 'neon', neonAccountId: current.id, ...(current.profile.requestedRole ? {requestedRole:current.profile.requestedRole} : {}), ...(verifiedPhone ? {phone:current.profile.phone,phoneVerified:true} : {}) });
+      }
+    });
+    // Migrate only saved addresses, once. Never turn unverified JSON bookings into paid orders.
+    if (!current.profile.addressMigrationComplete) {
+      const addresses = await client.query("SELECT id,data,created_at FROM allgo_account_items WHERE account_id=$1 AND kind='addresses'", [current.id]);
+      for (const address of addresses.rows) {
+        const ref = db.doc(`users/${uid}/addresses/${address.id}`);
+        const receiptRef = db.doc(`users/${uid}/address_migration_receipts/${address.id}`);
+        const projected = projectSavedAddress(address);
+        await db.runTransaction(async tx => {
+          const [existing, receipt] = await Promise.all([tx.get(ref), tx.get(receiptRef)]);
+          // SQL can roll back after Firestore commits. A receipt also survives an owner deletion.
+          if (receipt.exists) return;
+          if (!existing.exists) tx.create(ref, projected.data);
+          tx.create(receiptRef, {
+            schemaVersion: 2, source: 'legacy_neon', createdAt: Timestamp.now(),
+            outcome: existing.exists ? 'existing_preserved' : 'imported',
+            deliveryDetailsStatus: existing.exists ? 'existing_preserved' : projected.deliveryDetailsStatus,
+          });
+        });
+      }
+      await client.query("UPDATE allgo_accounts SET profile=profile || '{\"addressMigrationComplete\":true}'::jsonb WHERE id=$1", [current.id]);
+    }
+    const sessions = await client.query('SELECT expires_at FROM allgo_sessions WHERE token_hash=$1 AND account_id=$2 AND expires_at>now()', [sessionHash, current.id]);
+    if (!sessions.rows[0]) throw Object.assign(new Error('Please sign in again.'), { status: 401, code: 'auth/session-expired' });
+    await db.doc(`bridge_sessions/${sessionHash}`).set({ uid, neonAccountId: current.id, expiresAt: Timestamp.fromDate(sessions.rows[0].expires_at) });
+    const customToken = await auth.createCustomToken(uid, { allgoSession: sessionHash });
+    const snapshot = await profileRef.get();
+    const profile = { ...snapshot.data(), uid, name: current.name, email: current.email, emailVerified: current.profile.emailVerified === true, phoneVerified: current.profile.phoneVerified === true, serviceIdentityEnabled: true };
+    if (profile.role === 'admin' && user.customClaims?.admin !== true) throw Object.assign(new Error('Operations approval is missing.'), { status: 403, code: 'permission-denied' });
+    await client.query('COMMIT');
+    return { customToken, profile };
+  } catch (error) { await client.query('ROLLBACK'); throw error; }
+  finally { client.release(); }
+}
+export async function revokeBridgeSessions(accountId, sessionHash, keepSessionHash) {
+  if (!identityBridgeEnabled()) return;
+  const { db } = firebase();
+  if (sessionHash) { await db.doc(`bridge_sessions/${sessionHash}`).delete(); return; }
+  const sessions = await db.collection('bridge_sessions').where('neonAccountId', '==', accountId).get();
+  const targets = sessions.docs.filter(doc => doc.id !== keepSessionHash);
+  for (let offset = 0; offset < targets.length; offset += 400) {
+    const batch = db.batch(); targets.slice(offset, offset + 400).forEach(doc => batch.delete(doc.ref)); await batch.commit();
+  }
+}

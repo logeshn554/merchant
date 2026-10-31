@@ -1,0 +1,25 @@
+services:
+  merchant-api:
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file: .env.production.local
+    environment:
+      NODE_ENV: production
+      ALLGO_ENVIRONMENT: production
+      ACCOUNT_API_HOST: 0.0.0.0
+      ACCOUNT_API_PORT: 3005
+    ports:
+      - "127.0.0.1:3005:3005"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3005/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

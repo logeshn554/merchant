@@ -1,0 +1,12 @@
+{
+  "projectId": "deliver-app123",
+  "appId": "1:923852228383:web:4a742636e560280e8a122a",
+  "apiKey": "AIzaSyA3SqX5ZRDzBwrvD-3jz_WqhQTU76Xdpcc",
+  "authDomain": "deliver-app123.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "deliver-app123.firebasestorage.app",
+  "messagingSenderId": "923852228383",
+  "measurementId": "",
+  "oAuthClientId": "",
+  "recaptchaSiteKey": ""
+}

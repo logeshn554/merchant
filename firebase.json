@@ -1,0 +1,13 @@
+{
+  "hosting": {
+    "site": "deliver-app123-merchant",
+    "public": "dist",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

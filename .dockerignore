@@ -1,0 +1,14 @@
+node_modules
+functions/node_modules
+.env*
+functions/.env*
+.git
+android
+ios
+dist
+.cache
+.release
+release-assets
+*.log
+**/*service-account*.json
+**/credentials*.json

@@ -1,0 +1,187 @@
+import { useState, useEffect, type FormEvent } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
+import { nativeGoogleSignIn, nativeAppleSignIn, completeNativePhoneSignIn } from '../nativeAuth';
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signInWithPopup, updateProfile } from 'firebase/auth';
+import { ArrowRight, ArrowLeft, ShoppingBag, Bike, Package, Truck, Eye, EyeOff, LoaderCircle } from 'lucide-react';
+import { auth, ensureFirebaseAuthEmulator, googleProvider } from '../firebase';
+import { business } from '../business';
+import { passwordStrength, passwordStrengthLabel } from '../auth/passwordStrength';
+import { getOrCreateUserProfile, saveAccountName } from '../data/firestoreHelper';
+import { useNeonAccounts, signInAccount, forgotPasswordAccount, resetPasswordAccount } from '../accounts';
+import PhoneAccountFlow from './PhoneAccountFlow';
+import { appAudience, appTitle } from '../app/audience';
+
+export function authMessage(error: unknown): string {
+  const code = (error as { code?: string })?.code;
+  const messages: Record<string, string> = {
+    'auth/invalid-credential': 'The email or password is incorrect. Please try again.',
+    'auth/wrong-password': 'The email or password is incorrect. Please try again.',
+    'auth/user-not-found': 'The email or password is incorrect. Please try again.',
+    'auth/email-already-in-use': 'An account already uses this email. Sign in or reset your password.',
+    'auth/invalid-email': 'Enter a valid email address.',
+    'auth/weak-password': 'Choose a stronger password with at least 8 characters.',
+    'auth/operation-not-allowed': 'This sign-in method is not enabled for AllGo yet. Please contact support.',
+    'auth/unauthorized-domain': 'Google sign-in is not configured for this address. Use email sign-in.',
+    'auth/popup-blocked': 'Your browser blocked Google sign-in. Allow popups or use email sign-in.',
+    'auth/popup-closed-by-user': 'Google sign-in was closed. You can try again.',
+    'auth/network-request-failed': 'Unable to connect. Check your internet connection and try again.',
+    'auth/too-many-requests': 'Too many attempts. Please wait a few minutes before trying again.',
+    'auth/user-disabled': 'This account is disabled. Please contact support.',
+    'permission-denied': 'We could not access your account profile. Please contact support.',
+    'unavailable': 'Account services are temporarily unavailable. Please try again.',
+  };
+  const rawMsg = error instanceof Error ? error.message : String(error || '');
+  if (rawMsg.includes('BILLING_NOT_ENABLED')) {
+    return 'SMS requires Firebase Blaze billing. For testing, use phone +911234567890 with OTP 123456, or use Email & Password.';
+  }
+  if (useNeonAccounts && error instanceof Error && error.message.trim() && !['undefined','null'].includes(error.message.trim())) return error.message;
+  return (code && messages[code]) || 'We could not complete this request. Please try again.';
+}
+
+export default function AuthScreen() {
+  const [screen, setScreen] = useState<'welcome' | 'onboarding' | 'signin' | 'signup' | 'reset' | 'phone'>('welcome');
+  const [step, setStep] = useState(0);
+  const [email, setEmail] = useState('');
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [visible, setVisible] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [resetSent, setResetSent] = useState(false);
+  const [resetCode, setResetCode] = useState('');
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
+  const [phone, setPhone] = useState('');
+  const [verificationId, setVerificationId] = useState('');
+  const [code, setCode] = useState('');
+  const [resendAt, setResendAt] = useState(0);
+  const [clock, setClock] = useState(Date.now());
+  const strength = passwordStrength(password);
+  const strengthLabel = password ? passwordStrengthLabel(strength) : 'Not set';
+  const phoneResendWait = Math.max(0, Math.ceil((resendAt - clock) / 1000));
+  const partnerAudience = appAudience !== 'customer';
+  useEffect(() => {
+    if (useNeonAccounts) return;
+    if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable('FirebaseAuthentication')) return;
+    let active = true;
+    const handles = Promise.all([
+      FirebaseAuthentication.addListener('phoneCodeSent', event => { if (active) { setVerificationId(event.verificationId); setBusy(false); setNotice('Verification code sent.'); } }),
+      FirebaseAuthentication.addListener('phoneVerificationFailed', event => { if (active) { setError(event.message); setBusy(false); } }),
+      FirebaseAuthentication.addListener('phoneVerificationCompleted', () => { void completeNativePhoneSignIn().catch(error => { if (active) setError(authMessage(error)); }).finally(() => { if (active) setBusy(false); }); })
+    ]);
+    return () => { active = false; void handles.then(values => Promise.all(values.map(handle => handle.remove()))); };
+  }, []);
+  useEffect(() => {
+    if (screen !== 'phone' || resendAt <= clock) return;
+    const ticker = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(ticker);
+  }, [screen, resendAt, clock]);
+  const canonicalPhone = phone.replace(/[\s()-]/g, '');
+  const phoneSubmit = async () => {
+    if (verificationId) { await ensureFirebaseAuthEmulator(); await FirebaseAuthentication.confirmVerificationCode({ verificationId, verificationCode: code }); await completeNativePhoneSignIn(); return; }
+    if (!/^\+[1-9]\d{7,14}$/.test(canonicalPhone)) throw new Error('Enter your phone number with country code, such as +91…');
+    if (Date.now() < resendAt) throw new Error('Wait one minute before requesting another code.');
+    await ensureFirebaseAuthEmulator();
+    await FirebaseAuthentication.signInWithPhoneNumber({ phoneNumber: canonicalPhone, skipNativeAuth: false });
+    setResendAt(Date.now() + 60000); setClock(Date.now());
+  };
+  const navigate = (next: typeof screen) => { setScreen(next); setError(''); setNotice(''); setPassword(''); setVisible(false); setResetSent(false); setResetCode(''); setResetPassword(''); setResetPasswordConfirm(''); };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      if (useNeonAccounts) {
+        if (screen === 'reset') {
+          if (resetSent) {
+            if (resetPassword !== resetPasswordConfirm) throw new Error('The new passwords do not match.');
+            const res = await resetPasswordAccount(resetCode.trim(), resetPassword);
+            navigate('signin'); setNotice(res.message); return;
+          }
+          const res = await forgotPasswordAccount(email.trim());
+          setResetSent(true);
+          setNotice(res.message || 'If an account exists for this email, you will receive a password reset link.');
+          return;
+        }
+        if (screen !== 'signin' && screen !== 'signup') throw new Error('Use email and password to sign in.');
+        await signInAccount(email.trim(), password, screen === 'signup' ? name.trim() : undefined);
+        return;
+      }
+      if (screen === 'phone') { await phoneSubmit(); } else if (screen === 'reset') {
+        await sendPasswordResetEmail(auth, email.trim());
+        setNotice('If an account exists for this email, you will receive a password reset link.');
+      } else if (screen === 'signup') {
+        if (name.trim().length < 2) throw new Error('Enter your full name.');
+        const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+        await updateProfile(credential.user, { displayName: name.trim() });
+        await getOrCreateUserProfile(credential.user.uid, email.trim(), name.trim());
+        await saveAccountName(credential.user.uid, name.trim());
+      } else {
+        await signInWithEmailAndPassword(auth, email.trim(), password);
+      }
+    } catch (error) { setError(authMessage(error)); console.error('AllGo authentication failed', error); }
+    finally { setBusy(false); }
+  };
+  const google = async () => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try { if (Capacitor.isNativePlatform()) await nativeGoogleSignIn(); else await signInWithPopup(auth, googleProvider); }
+    catch (error) { setError(authMessage(error)); }
+    finally { setBusy(false); }
+  };
+
+  if ((!partnerAudience || useNeonAccounts) && ['signup','signin','phone'].includes(screen)) return <PhoneAccountFlow key={screen} mode={screen==='signup'?'signup':'signin'} onBack={()=>navigate('welcome')} onModeChange={mode=>navigate(mode==='signup'?'signup':'phone')}/>;
+
+  return <main className="auth-shell safe-area-top safe-area-bottom">
+    <section className={`auth-panel ${screen === 'welcome' ? 'auth-welcome' : ''}`} data-screen={screen} data-partner-screen={partnerAudience ? (appAudience === 'merchant' ? 'merchant-auth' : 'driver-auth') : undefined}>
+      {screen === 'welcome' ? <>
+        <div className="brand-mark" aria-hidden="true">A<span /></div>
+        <h1 className="auth-brand">{appTitle}</h1>
+        <p className="auth-eyebrow">{partnerAudience ? appAudience === 'driver' ? 'DELIVERY PARTNER' : 'BUSINESS PARTNER' : 'YOUR EVERYDAY, DELIVERED'}</p>
+        <h2>{partnerAudience ? appAudience === 'driver' ? <>Deliver with<br />AllGo.</> : <>Your business,<br />with AllGo.</> : <>Everything you need.<br />One app to get it.</>}</h2>
+        <p className="auth-description">{partnerAudience ? appAudience === 'driver' ? 'Sign in to see your delivery account and assigned work.' : 'Sign in to manage an approved restaurant or grocery business.' : <>Food, groceries, parcels and rides.<br />A little less planning. A lot more living.</>}</p>
+        {!partnerAudience && <div className="service-orbit" aria-hidden="true"><ShoppingBag /><Bike /><Package /><Truck /></div>}
+        <div className="auth-welcome-actions">
+          <button className="auth-primary auth-white" onClick={() => navigate(useNeonAccounts?'signup':partnerAudience?'signup':'onboarding')}>{partnerAudience ? 'Create an account' : 'Get started'} <ArrowRight size={19} /></button>
+          <button className="auth-outline" onClick={() => navigate(useNeonAccounts?'phone':'signin')}>I already have an account</button>
+        </div>
+      </> : screen === 'onboarding' ? <section className="onboarding-page" data-screen="onboarding" aria-label="AllGo introduction">
+        <button type="button" className="auth-back" aria-label="Back" onClick={() => step ? setStep(step - 1) : navigate('welcome')}><ArrowLeft size={21} /></button>
+        <div className="onboarding-copy" key={step} aria-live="polite" aria-atomic="true">
+          <p className="auth-eyebrow">INTRODUCTION · {step + 1} OF 3</p>
+          <h1>{['Everything you need, in one app.', 'From your doorstep to theirs.', 'Your city. Your next stop.'][step]}</h1>
+          <p className="auth-description">{['Discover food and daily essentials from neighbourhood partners.', 'Send a parcel, arrange a driver or transport your vehicle.', 'Book your journey and follow your confirmed orders in one place.'][step]}</p>
+        </div>
+        <div className="onboarding-art" aria-hidden="true">{step === 0 ? <ShoppingBag size={88} strokeWidth={1.25} /> : step === 1 ? <Package size={88} strokeWidth={1.25} /> : <Bike size={88} strokeWidth={1.25} />}</div>
+        <div className="onboarding-dots" role="group" aria-label={`Introduction step ${step + 1} of 3`}>{[0, 1, 2].map(index => <button type="button" key={index} aria-label={`Go to introduction ${index + 1}`} aria-current={index === step ? 'step' : undefined} className={index === step ? 'selected' : ''} onClick={() => setStep(index)} />)}</div>
+        <button type="button" className="auth-primary" onClick={() => step < 2 ? setStep(step + 1) : navigate('signup')}>{step < 2 ? 'Next' : 'Create your account'}<ArrowRight size={18} /></button>
+        <button type="button" className="auth-switch" onClick={() => navigate('signin')}>Skip · Sign in</button>
+      </section> : <>
+        <button className="auth-back" aria-label="Back to welcome" disabled={busy} onClick={() => navigate('welcome')}><ArrowLeft size={21} /></button>
+        <div className="auth-wordmark">All<span>Go</span></div>
+        <p className="auth-eyebrow">EVERYTHING YOU NEED, IN ONE APP</p>
+        <h1>{screen === 'signup' ? 'Your everyday starts here.' : screen === 'reset' ? 'Let’s get you back in.' : 'Welcome back.'}</h1>
+        <p className="auth-description">{screen === 'signup' ? 'Create your account to order, send and go.' : screen === 'reset' ? useNeonAccounts && resetSent ? `Enter the code sent to ${email} and choose a new password.` : 'We’ll send you a password reset link if an account exists for this email.' : 'Sign in to pick up where you left off.'}</p>
+        <form onSubmit={submit} className="auth-form">
+          {screen==='signin' && useNeonAccounts && <button type="button" className="auth-google" disabled={busy} onClick={()=>navigate('phone')}>Sign in with phone & OTP</button>}
+          {screen === 'signup' && <label>Full name<input name="name" autoComplete="name" required minLength={2} maxLength={100} value={name} disabled={busy} onChange={event => setName(event.target.value)} /></label>}
+          {screen !== 'phone' && <label>Email address<input id="auth-email-input" name="email" type="email" inputMode="email" autoCapitalize="none" spellCheck={false} autoComplete="email" required value={email} disabled={busy} onChange={event => setEmail(event.target.value)} placeholder="you@example.com" /></label>}
+          {screen !== 'reset' && screen !== 'phone' && <label>Password<div className="auth-password"><input id="auth-password-input" name="password" type={visible ? 'text' : 'password'} required minLength={screen === 'signup' ? 8 : 1} maxLength={screen === 'signup' ? 128 : undefined} autoComplete={screen === 'signup' ? 'new-password' : 'current-password'} value={password} disabled={busy} onChange={event => setPassword(event.target.value)} /><button type="button" aria-controls="auth-password-input" aria-pressed={visible} aria-label={visible ? 'Hide password' : 'Show password'} disabled={busy} onClick={() => setVisible(!visible)}>{visible ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>{screen === 'signup' && <><span className="auth-password-strength" role="progressbar" aria-label="Password strength" aria-valuemin={0} aria-valuemax={4} aria-valuenow={strength} aria-valuetext={`Password strength: ${strengthLabel}`}><span aria-hidden="true">{[0, 1, 2, 3].map(index => <i key={index} className={index < strength ? 'filled' : ''} />)}</span><strong>{strengthLabel}</strong></span><small id="signup-password-help">Use at least 8 characters; longer passwords with a mix of letters, numbers or symbols are stronger.</small></>}</label>}
+          {screen === 'signup' && <p className="auth-legal">By creating an account, you agree to {business.terms ? <a href={business.terms} target="_blank" rel="noopener noreferrer">the Terms of Service</a> : 'the AllGo Terms of Service'} and acknowledge {business.privacy ? <a href={business.privacy} target="_blank" rel="noopener noreferrer">the Privacy Policy</a> : 'the AllGo Privacy Policy'}.</p>}
+          {screen === 'signin' && <button type="button" className="auth-text-link" disabled={busy} onClick={() => navigate('reset')}>Forgot password?</button>}
+          {screen === 'phone' && <><label>Phone number<input name="tel" type="tel" autoComplete="tel" value={phone} disabled={busy || Boolean(verificationId)} onChange={event => setPhone(event.target.value)} placeholder="+91…" required /></label>{verificationId && <><label>Verification code<input className="auth-otp-input" name="one-time-code" inputMode="numeric" enterKeyHint="done" autoComplete="one-time-code" autoFocus spellCheck={false} pattern="[0-9]{6}" maxLength={6} value={code} disabled={busy} onChange={event => setCode(event.target.value.replace(/\D/g, ''))} required /></label><button type="button" className="auth-text-link" disabled={busy || phoneResendWait > 0} onClick={() => { setVerificationId(''); setCode(''); }}>{phoneResendWait ? `Request another code in ${phoneResendWait}s` : 'Request another code'}</button><button type="button" className="auth-text-link" disabled={busy} onClick={() => { setVerificationId(''); setCode(''); }}>Change phone number</button></>}</>}
+          {error && <p id="auth-error" role="alert" className="auth-error">{error}</p>}
+          {notice && <p role="status" className="auth-notice">{notice}</p>}
+          {screen === 'reset' && useNeonAccounts && resetSent && <><div className="auth-reset-instructions"><strong>Reset your password</strong><p>Enter the code from your email, then set and confirm a new password. If the message is missing, check your spam folder.</p></div><label>Email reset code<input name="one-time-code" inputMode="text" autoComplete="one-time-code" spellCheck={false} value={resetCode} onChange={event => setResetCode(event.target.value)} required pattern="[a-f0-9]{64}" disabled={busy} /></label><label>New password<input name="new-password" type="password" autoComplete="new-password" minLength={8} maxLength={128} value={resetPassword} onChange={event => setResetPassword(event.target.value)} required disabled={busy} /><small>Use 8 to 128 characters.</small></label><label>Confirm new password<input name="confirm-new-password" type="password" autoComplete="new-password" minLength={8} maxLength={128} value={resetPasswordConfirm} onChange={event => setResetPasswordConfirm(event.target.value)} required disabled={busy} /></label><button type="button" disabled={busy} onClick={() => { setResetSent(false); setResetCode(''); setResetPassword(''); setResetPasswordConfirm(''); setNotice(''); }}>Request another code</button></>}
+          <button disabled={busy} className="auth-primary" type="submit">{busy ? <><LoaderCircle className="animate-spin" size={18} /> Please wait…</> : <>{screen === 'signup' ? 'Create account' : screen === 'reset' ? useNeonAccounts && resetSent ? 'Update password' : 'Send reset instructions' : screen === 'phone' ? verificationId ? 'Verify code' : 'Send code' : 'Sign in'}<ArrowRight size={18} /></>}</button>
+        </form>
+        {!useNeonAccounts && (!Capacitor.isNativePlatform() || Capacitor.isPluginAvailable('FirebaseAuthentication')) && screen !== 'reset' && screen !== 'phone' && <><div className="auth-divider">or</div><button className="auth-google" disabled={busy} onClick={() => void google()}>Continue with Google</button></>}
+        {!useNeonAccounts && Capacitor.isNativePlatform() && Capacitor.isPluginAvailable('FirebaseAuthentication') && screen !== 'reset' && <button className="auth-google" disabled={busy} onClick={() => { navigate('phone'); setVerificationId(''); }}>Continue with phone</button>}
+        {!useNeonAccounts && Capacitor.getPlatform() === 'ios' && Capacitor.isPluginAvailable('FirebaseAuthentication') && screen !== 'reset' && <button className="auth-google" disabled={busy} onClick={() => { setBusy(true); setError(''); void nativeAppleSignIn().catch(error => setError(authMessage(error))).finally(() => setBusy(false)); }}>Continue with Apple</button>}
+        <button className="auth-switch" disabled={busy} onClick={() => navigate(screen === 'signin' ? 'signup' : 'signin')}>{screen === 'signin' ? 'New to AllGo? Create an account' : 'Already have an account? Sign in'}</button>
+      </>}
+    </section>
+  </main>;
+}

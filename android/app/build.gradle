@@ -1,0 +1,86 @@
+apply plugin: 'com.android.application'
+
+def allgoKeystore = System.getenv('ALLGO_KEYSTORE_PATH')
+def allgoSigningReady = allgoKeystore && System.getenv('ALLGO_KEYSTORE_PASSWORD') && System.getenv('ALLGO_KEY_ALIAS') && System.getenv('ALLGO_KEY_PASSWORD')
+def releaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+if ((releaseRequested || project.hasProperty('allgoRequireSigning')) && !allgoSigningReady) {
+    throw new GradleException('Release signing requires all four ALLGO_KEYSTORE_* / ALLGO_KEY_* environment values.')
+}
+if (releaseRequested && (!file('google-services.json').exists() || System.getenv('ALLGO_RELEASE_PREFLIGHT_PASSED') != 'true')) {
+    throw new GradleException('Release requires Firebase registration and a passing environment preflight through the release wrapper.')
+}
+if (releaseRequested) {
+    def metadataFile = file('src/main/assets/public/allgo-build.json')
+    if (!metadataFile.exists()) throw new GradleException('Release web build metadata is missing.')
+    def metadata = new groovy.json.JsonSlurper().parse(metadataFile)
+    if (metadata.demo || !(metadata.mode in ['staging', 'production'])) throw new GradleException('Release cannot package a development or demo bundle.')
+    def registration = new groovy.json.JsonSlurper().parse(file('google-services.json'))
+    if (metadata.projectId != registration.project_info.project_id) throw new GradleException('Web bundle and native Firebase registration project mismatch.')
+}
+
+android {
+    namespace "in.allgo.merchant"
+    compileSdk rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "in.allgo.merchant"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode = (System.getenv('ALLGO_VERSION_CODE') ?: '1').toInteger()
+        versionName = System.getenv('ALLGO_VERSION_NAME') ?: "1.0"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        if (allgoSigningReady) {
+            release {
+                storeFile file(allgoKeystore)
+                storePassword System.getenv('ALLGO_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ALLGO_KEY_ALIAS')
+                keyPassword System.getenv('ALLGO_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (allgoSigningReady) signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation 'com.google.firebase:firebase-auth:23.1.0'
+    implementation 'com.google.firebase:firebase-functions:21.2.1'
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
+
