@@ -28,10 +28,7 @@
     "start": "node server/start-production.mjs",
     "android:sync:development": "npm run build:development && npx cap sync android && node scripts/prepare-native.mjs",
     "ios:build:simulator": "npm run build:development && npx cap sync ios && node scripts/prepare-native.mjs && node scripts/build-ios.mjs",
-    "ios:check:simulator": "node scripts/check-ios-artifact.mjs",
-    "mobile:start": "cd mobile && npx expo start",
-    "mobile:android": "cd mobile && npx expo run:android",
-    "mobile:ios": "cd mobile && npx expo run:ios"
+    "ios:check:simulator": "node scripts/check-ios-artifact.mjs"
   },
   "dependencies": {
     "@capacitor-firebase/app-check": "^8.5.2",

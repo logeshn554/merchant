@@ -1,11 +1,11 @@
 ---
 name: merchant-ui
-description: UI standard for the GoServe merchant (restaurant partner) app. Use whenever building or changing any merchant screen, component, layout, colour, icon, empty/loading/error state, or the orders, menu, earnings, insights or store pages, so the result looks like a professional real-world partner app.
+description: UI standard for the AllGo Merchant (restaurant partner) app. Use whenever building or changing any merchant screen, component, layout, colour, icon, empty/loading/error state, or the orders, menu, earnings, insights or store pages, so the result looks like a professional real-world partner app.
 ---
 
 # Merchant UI standard
 
-Goal: a calm, dense-but-readable operations tool that a busy kitchen can use at a glance.
+Goal: a calm, dense-but-readable AllGo operations tool that a busy kitchen can use at a glance.
 It should look like Zomato Restaurant Partner or Uber Eats Manager, not like a template or a demo.
 
 ## 1. Principles
@@ -16,27 +16,16 @@ It should look like Zomato Restaurant Partner or Uber Eats Manager, not like a t
 5. Calm by default, loud only for new orders and problems.
 
 ## 2. Design tokens (define once in `:root`, never hard-code values)
-Keep the GoServe brand (deep green + lime) but make surfaces light by default for kitchen readability.
-Provide a dark theme through `prefers-color-scheme` and a manual toggle.
+Keep the existing AllGo brand (`--allgo-brand` and related tokens) and make surfaces light by default for kitchen readability.
+Use the existing `--allgo-*` tokens as the single source of truth. Provide a dark theme through `prefers-color-scheme` and a manual toggle; do not introduce a second palette.
 
-Colour (light):
-- `--bg: #f5f7f4` page background
-- `--surface: #ffffff` cards
-- `--surface-2: #eef2ec` subtle fills
-- `--border: #dfe5dc`
-- `--text: #101a13` primary text (contrast >= 7:1 on surface)
-- `--text-muted: #5b6b60` secondary text (contrast >= 4.5:1)
-- `--brand: #0f3d24` deep green: headers, primary text on light
-- `--accent: #b8f542` lime: highlights only, never as text on white
-- `--primary: #1a7f46` primary buttons (white text, contrast >= 4.5:1)
-- `--info: #1d6fd1`, `--warning: #b86e00`, `--danger: #c8372d`, `--success: #1a7f46`
-- Each semantic colour needs a `-bg` tint (e.g. `--danger-bg: #fdecea`) for badges and alerts.
+Colour: use `--allgo-canvas`, `--allgo-surface`, `--allgo-border`, `--allgo-ink`, `--allgo-muted`, `--allgo-brand`, `--allgo-primary`, `--allgo-info`, `--allgo-warning`, `--allgo-danger`, and their soft/background tokens. Text must meet WCAG AA contrast in both themes.
 
 Order status colours (use consistently on cards, badges, board columns):
 - New = info blue, Preparing = warning amber, Ready = success green, Picked up = neutral grey,
   Rejected/Cancelled = danger red.
 
-Type: Inter (system fallback). Scale 12 / 14 / 16 / 20 / 24 / 32. Body 14-16, weights 400/500/600/700 only.
+Type: Inter (system fallback). Scale 12 / 14 / 16 / 20 / 24 / 32. Body 14-16, weights 400/500/600/700 only. Never use text below 12px.
 Order numbers and prices use tabular numerals (`font-variant-numeric: tabular-nums`).
 Line height 1.4 body, 1.2 headings. No more than 3 sizes on one card.
 

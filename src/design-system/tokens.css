@@ -10,7 +10,7 @@
   --allgo-type-body: 14px;
   --allgo-type-callout: 14px;
   --allgo-type-caption: 12px;
-  --allgo-type-tiny: 11px;
+  --allgo-type-tiny: 12px;
   --allgo-type-input: 16px;
   --allgo-line-tight: 1.2;
   --allgo-line-title: 1.35;
@@ -23,6 +23,9 @@
   --allgo-radius-control: 12px;
   --allgo-danger: var(--allgo-error);
   --allgo-danger-soft: #fff0f3;
+  --allgo-info: #4164c8;
+  --allgo-info-soft: #edf2ff;
+  --allgo-success-soft: #eaf9f1;
   --allgo-warning-soft: #fff7e5;
   --allgo-shadow-overlay: 0 16px 48px rgb(32 29 43 / 16%);
   --allgo-brand: #5130ef;
@@ -57,6 +60,40 @@
   --allgo-touch-target: var(--allgo-touch);
   --allgo-control-height: 48px;
   --allgo-control-radius: var(--allgo-radius-control);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --allgo-ink: #f5f7fb;
+    --allgo-text: var(--allgo-ink);
+    --allgo-muted: #b8c0ce;
+    --allgo-surface: #18202b;
+    --allgo-canvas: #10161f;
+    --allgo-border: #303b4b;
+    --allgo-danger-soft: #3a2028;
+    --allgo-warning-soft: #3a2d18;
+    --allgo-info-soft: #1d2b48;
+    --allgo-success-soft: #173328;
+    --stitch-soft: #25234a;
+    --allgo-shadow-card: 0 4px 18px rgb(0 0 0 / 24%);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --allgo-ink: #f5f7fb;
+  --allgo-text: var(--allgo-ink);
+  --allgo-muted: #b8c0ce;
+  --allgo-surface: #18202b;
+  --allgo-canvas: #10161f;
+  --allgo-border: #303b4b;
+  --allgo-danger-soft: #3a2028;
+  --allgo-warning-soft: #3a2d18;
+  --allgo-info-soft: #1d2b48;
+  --allgo-success-soft: #173328;
+  --stitch-soft: #25234a;
+  --allgo-shadow-card: 0 4px 18px rgb(0 0 0 / 24%);
 }
 
 .allgo-navigation {

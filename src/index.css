@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./design-system/tokens.css";
+@import "./design-system/merchant-components.css";
 @import "leaflet/dist/leaflet.css";
 
 :root {
@@ -37,12 +38,19 @@ button { touch-action: manipulation; }
 .safe-area-bottom { padding-bottom: var(--allgo-safe-bottom); }
 
 @theme {
-  --color-indigo-50: #f3efff;
-  --color-indigo-100: #e7deff;
-  --color-indigo-600: #5130ef;
-  --color-indigo-700: #4021cc;
-  --color-blue-600: #5130ef;
-  --color-blue-700: #4021cc;
+  --color-indigo-50: var(--stitch-soft);
+  --color-indigo-100: var(--allgo-border);
+  --color-indigo-600: var(--allgo-primary);
+  --color-indigo-700: var(--allgo-primary-strong);
+  --color-blue-50: var(--allgo-info-soft);
+  --color-blue-600: var(--allgo-info);
+  --color-blue-700: var(--allgo-primary-strong);
+  --color-emerald-50: var(--allgo-success-soft);
+  --color-emerald-600: var(--allgo-success);
+  --color-amber-50: var(--allgo-warning-soft);
+  --color-amber-600: var(--allgo-warning);
+  --color-rose-50: var(--allgo-danger-soft);
+  --color-rose-600: var(--allgo-danger);
 }
 
 button:not(:disabled) { cursor: pointer; }
