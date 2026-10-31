@@ -5,7 +5,7 @@ import {
   BarChart3, TrendingUp, Settings, Award, MoreHorizontal
 } from 'lucide-react';
 import { Booking, MenuItem, GroceryProduct } from '../types';
-import { formatRupees } from '../utils/moneyFormatter';
+import { formatPaise } from '../utils/moneyFormatter';
 
 import { playOrderChime, startRepeatingAlert, stopRepeatingAlert } from '../utils/merchantAlertChime';
 
@@ -318,6 +318,7 @@ export default function MerchantPortal({ activeBookings, userId, merchantId, mer
       online={activeOutlet.acceptingOrders !== false}
       connected={!error}
       pendingOrders={(activeMerchantType === 'restaurant' ? foodOrders : groceryOrders).filter(order => order.status === 'pending').length}
+      permissions={activePermissions}
     >
       {/* role-navigation / Merchant navigation is rendered by MerchantAppShell. */}
       <div className="allgo-merchant bg-slate-900 text-slate-100 h-full flex flex-col font-sans">
@@ -408,21 +409,23 @@ export default function MerchantPortal({ activeBookings, userId, merchantId, mer
               </div>
             ) : (
               <MerchantOrderBoard orders={displayedOrders} renderOrder={ord => (
-                  <div id={`merchant-order-print-${ord.bookingId}`} key={ord.bookingId} data-booking-print-id={ord.bookingId} className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-3">
+                  <div id={`merchant-order-print-${ord.bookingId}`} key={ord.bookingId} data-booking-print-id={ord.bookingId} className="merchant-order-card bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-3">
                     <BookingExceptionPanel booking={ord}/>
                     {ord.status === 'pending' && <MerchantOrderCountdown createdAt={ord.createdAt} serviceType={ord.serviceType} status={ord.status}/>}
                     {ord.status === 'pending' && !ord.driverId && ['paid', 'pending_cod'].includes(ord.paymentStatus || '') && <MerchantRejection bookingId={ord.bookingId} cashOnDelivery={ord.paymentStatus === 'pending_cod'}/>}
                     <MerchantPreparationEditor booking={ord}/>
-                    <div className="flex justify-between items-start pb-2 border-b border-slate-700">
+                    <div className="merchant-order-card-header flex justify-between items-start pb-2 border-b border-slate-700">
                       <div>
-                        <span className="text-[10px] font-bold text-blue-400 font-mono">{ord.bookingId}</span>
-                        <h4 className="text-xs font-bold text-white mt-0.5">Client: {ord.customerName}</h4>
+                        <div className="merchant-order-meta"><span className="merchant-order-number">#{ord.bookingId.slice(-6).toUpperCase()}</span><time dateTime={ord.createdAt}>{new Date(ord.createdAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</time><span className={`merchant-payment-badge ${ord.paymentStatus === 'pending_cod' ? 'is-cod' : 'is-paid'}`}>{ord.paymentStatus === 'pending_cod' ? 'COD' : 'Paid'}</span></div>
+                        <h4 className="text-xs font-bold text-white mt-0.5">{ord.customerName.split(' ')[0]} · Delivery</h4>
                       </div>
                       <div className="text-right">
-                        <span className="text-xs font-bold text-white">₹{ord.price}</span>
-                        <p className="text-[10px] text-slate-400 mt-0.5 uppercase font-bold">{ord.status}</p>
+                        <span className="merchant-order-total text-xs font-bold text-white">{formatPaise(Math.round(ord.price * 100))}</span>
+                        <p className="text-xs text-slate-400 mt-0.5 uppercase font-bold">{ord.status === 'pending' ? 'New order' : ord.status}</p>
                       </div>
                     </div>
+
+                    {ord.details?.notes && <div className="merchant-order-note" role="note"><strong>Customer note</strong><span>{ord.details.notes}</span></div>}
 
                     {/* Customer & Partner Communication Bar */}
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-b border-slate-700/60 pb-2">
@@ -446,7 +449,7 @@ export default function MerchantPortal({ activeBookings, userId, merchantId, mer
                     <MerchantThermalPrint booking={ord}/>
 
                     {/* Order items nested list */}
-                    <div className="space-y-1.5 text-xs text-slate-300">
+                    <div className="merchant-order-items space-y-1.5 text-xs text-slate-300">
                       {ord.details?.items?.map((it: { name: string; price: number; quantity: number; removed?: boolean; variantName?: string; addOns?: { id: string; name: string }[] }, idx: number) => (
                         <div key={idx} className="flex flex-col gap-1 py-1 border-b border-slate-800/60 last:border-0">
                           <div className="flex justify-between items-start">

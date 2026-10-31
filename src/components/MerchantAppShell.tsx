@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { Bell, ChevronDown, Circle, LogOut } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Bell, ChevronDown, Circle, LogOut, Moon, Sun } from 'lucide-react';
 import { nativeSignOut } from '../nativeNotifications';
 import { MERCHANT_PRIMARY_NAV, type MerchantPanel, isMerchantPanelActive } from './merchantNavigation';
 
@@ -16,11 +16,14 @@ interface MerchantAppShellProps {
   online: boolean;
   connected: boolean;
   pendingOrders: number;
+  permissions?: readonly string[];
 }
 
-export default function MerchantAppShell({ children, panel, onPanelChange, outlet, outlets, selectedOutlet, onOutletChange, userId, online, connected, pendingOrders }: MerchantAppShellProps) {
+export default function MerchantAppShell({ children, panel, onPanelChange, outlet, outlets, selectedOutlet, onOutletChange, userId, online, connected, pendingOrders, permissions = [] }: MerchantAppShellProps) {
+  const [darkMode, setDarkMode] = useState(() => typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark');
+  useEffect(() => { document.documentElement.dataset.theme = darkMode ? 'dark' : 'light'; }, [darkMode]);
   const navigate = (id: MerchantPanel) => onPanelChange(id === 'settlements' ? 'settlements' : id);
-  const primaryItems = MERCHANT_PRIMARY_NAV.filter(item => item.permission !== 'orders' || true);
+  const primaryItems = MERCHANT_PRIMARY_NAV.filter(item => !item.permission || permissions.includes(item.permission));
 
   return (
     <div className="allgo-merchant-shell">
@@ -47,6 +50,7 @@ export default function MerchantAppShell({ children, panel, onPanelChange, outle
             <span className={`merchant-online-status ${online ? 'is-online' : 'is-offline'}`}><span aria-hidden="true" />{online ? 'Online' : 'Offline'}</span>
             <span className="merchant-header-connection" title={connected ? 'Live connection' : 'Reconnecting'}><Circle aria-hidden="true" className={connected ? 'is-connected' : 'is-disconnected'} />{connected ? 'Live' : 'Offline'}</span>
             <button type="button" className="merchant-header-icon" aria-label="Notifications"><Bell aria-hidden="true" />{pendingOrders > 0 && <b>{pendingOrders}</b>}</button>
+            <button type="button" className="merchant-header-icon" aria-label={darkMode ? 'Use light theme' : 'Use dark theme'} onClick={() => setDarkMode(value => !value)}>{darkMode ? <Sun aria-hidden="true" /> : <Moon aria-hidden="true" />}</button>
             <button type="button" className="merchant-header-icon" aria-label="Sign out" onClick={() => void nativeSignOut()}><LogOut aria-hidden="true" /></button>
           </div>
         </header>
