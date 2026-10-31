@@ -38,6 +38,7 @@ import MerchantItemRemover from './MerchantItemRemover';
 import MerchantOrderChat from './MerchantOrderChat';
 import MaskedCallButton from './MaskedCallButton';
 import MerchantAppShell from './MerchantAppShell';
+import MerchantOrderBoard from './MerchantOrderBoard';
 import { type MerchantPanel } from './merchantNavigation';
 import { isGroceryOrderFullyPicked } from '../design-system/groceryTracking';
 import { 
@@ -406,8 +407,7 @@ export default function MerchantPortal({ activeBookings, userId, merchantId, mer
                 <p className="text-xs text-slate-300 mt-1">Paid orders assigned to this business will appear here.</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {displayedOrders.map(ord => (
+              <MerchantOrderBoard orders={displayedOrders} renderOrder={ord => (
                   <div id={`merchant-order-print-${ord.bookingId}`} key={ord.bookingId} data-booking-print-id={ord.bookingId} className="bg-slate-800 border border-slate-700 rounded-xl p-4 space-y-3">
                     <BookingExceptionPanel booking={ord}/>
                     {ord.status === 'pending' && <MerchantOrderCountdown createdAt={ord.createdAt} serviceType={ord.serviceType} status={ord.status}/>}
@@ -590,8 +590,7 @@ export default function MerchantPortal({ activeBookings, userId, merchantId, mer
                       )}
                     </div>
                   </div>
-                ))}
-              </div>
+              )} />
             )}
           </div>
         )}
