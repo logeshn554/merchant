@@ -10,3 +10,4 @@ test("frontend exclusively uses Firebase Authentication for identity and session
   assert.doesNotMatch(accountsSrc, /useNeonAccounts\s*=\s*env\.VITE_AUTH_PROVIDER === 'neon'/, "Neon accounts must not be used as identity authority");
   assert.doesNotMatch(appSrc, /watchAccount/, "App.tsx must use Firebase Auth listener directly");
 });
+

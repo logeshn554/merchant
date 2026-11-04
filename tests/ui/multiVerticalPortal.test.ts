@@ -8,3 +8,4 @@ test("merchant portal accepts all seller verticals in props and outlet selector"
   assert.match(portalSrc, /merchantType\?:\s*SellerVertical/);
   assert.match(portalSrc, /Home kitchen operations|Handmade operations/);
 });
+

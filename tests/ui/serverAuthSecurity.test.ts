@@ -11,3 +11,4 @@ test("server identity bridge strictly verifies Firebase tokens without bypasses"
   assert.doesNotMatch(serverSrc, /dummyPassword/, "dummyPassword auto-creation must be removed");
   assert.doesNotMatch(serverSrc, /Alex Sharma.*Chef Rajesh/, "Hardcoded sample accounts seeding must be removed in production");
 });
+

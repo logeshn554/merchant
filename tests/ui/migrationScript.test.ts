@@ -11,3 +11,4 @@ test("migration script exists and implements safe reconciliation without destruc
   assert.match(scriptContent, /users/);
   assert.match(scriptContent, /dry-run|--dry-run/);
 });
+

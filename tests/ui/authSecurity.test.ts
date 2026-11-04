@@ -16,3 +16,4 @@ test("authentication codebase strictly excludes demo fallbacks and synthetic tok
   assert.doesNotMatch(authScreenSrc, /1234567890/, "Demo phone guidance must be removed from AuthScreen.tsx");
   assert.doesNotMatch(authScreenSrc, /OTP 123456/, "Demo OTP guidance must be removed from AuthScreen.tsx");
 });
+

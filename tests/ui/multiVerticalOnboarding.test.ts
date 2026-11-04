@@ -11,3 +11,4 @@ test("partner onboarding UI supports all seller verticals including home kitchen
   assert.match(setupSrc, /home_kitchen/);
   assert.match(setupSrc, /handmade/);
 });
+
