@@ -1,6 +1,6 @@
 import { Capacitor } from '@capacitor/core';
 import type { UserProfile } from './types';
-import { signInWithCustomToken, signOut, setPersistence, inMemoryPersistence } from 'firebase/auth';
+import { signInWithCustomToken, signOut, setPersistence, inMemoryPersistence, onAuthStateChanged } from 'firebase/auth';
 import { auth } from './firebase';
 import { sessionToken, saveSession, clearSession } from './sessionStorage';
 import { normalizeAccountProfile } from './app/accountProfile';
@@ -13,7 +13,7 @@ import { appAudience } from './app/audience';
 
 const env = (typeof import.meta !== 'undefined' && (import.meta as { env?: Record<string, string | undefined> })?.env) || (typeof process !== 'undefined' ? process.env : {}) || {};
 const isFirebaseHost = typeof window !== 'undefined' && !env.VITE_ACCOUNT_API_URL && (window.location.hostname.endsWith('.web.app') || window.location.hostname.endsWith('.firebaseapp.com'));
-export const useNeonAccounts = env.VITE_AUTH_PROVIDER === 'neon' && !isFirebaseHost;
+export const useNeonAccounts = false;
 const envBase = (env.VITE_ACCOUNT_API_URL || '').replace(/\/$/, '');
 const candidateBases = Array.from(new Set([
   envBase,
@@ -133,6 +133,11 @@ export async function signOutAccount() {
 }
 export function watchAccount(listener: (value: UserProfile | null) => void, onError: (error: unknown) => void) {
   let cancelled = false; listeners.add(listener);
+  const unsubscribeAuth = onAuthStateChanged(auth, user => {
+    if (!user && !cancelled) publish(null);
+  }, error => {
+    if (!cancelled) onError(error);
+  });
   const generation = sessionGeneration;
   void accountRequest<UserProfile>('/account').then(async value => {
     if (!cancelled && generation === sessionGeneration) { const profile = await connectServiceIdentity(normalizeAccountProfile(value)); if (!cancelled && generation === sessionGeneration) publish(profile); }
@@ -146,7 +151,7 @@ export function watchAccount(listener: (value: UserProfile | null) => void, onEr
       }
     }
   });
-  return () => { cancelled = true; listeners.delete(listener); };
+  return () => { cancelled = true; listeners.delete(listener); unsubscribeAuth(); };
 }
 export function pollAccount<T>(path: string, callback: (value: T) => void, onError: (error: unknown) => void = console.error, intervalMs = 2000) {
   let stopped = false; let timer: ReturnType<typeof setTimeout>;

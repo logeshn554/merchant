@@ -6,13 +6,14 @@ import { lazy, Suspense, useEffect, useState, useRef } from 'react';
 import { LogOut } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from './firebase';
-import { useNeonAccounts, watchAccount, hasServiceIdentity } from './accounts';
+import { useNeonAccounts, hasServiceIdentity } from './accounts';
 import VerifyAccount from './components/VerifyAccount';
 import { initializeNativeNotifications, nativeSignOut } from './nativeNotifications';
 import AuthScreen, { authMessage } from './components/AuthScreen';
 import { getOrCreateUserProfile, listenToAccountProfile, listenToBookings, listenToCustomerBookings, listenToDriverBookings, listenToDriverProfiles, listenToMerchantBookings, reverseServiceLocation } from './data/firestoreHelper';
 import { useCurrentLocation } from './location/useCurrentLocation';
 import { Booking, DriverProfile, UserProfile } from './types';
+import { isLegacyMerchantType } from './domain/merchant';
 
 declare const __ALLGO_AUDIENCE__: AppAudience;
 const appAudience: AppAudience = typeof __ALLGO_AUDIENCE__ !== 'undefined' ? __ALLGO_AUDIENCE__ : 'customer';
@@ -69,27 +70,6 @@ export default function App() {
   }, [currentUser?.uid, hasServiceIdentity]);
 
   useEffect(() => {
-    if (useNeonAccounts) {
-      setAuthChecking(true);
-      setProfileError('');
-      return watchAccount(
-        profile => {
-          if (accountUid.current !== (profile?.uid || null)) {
-            setBookings([]);
-            setDrivers([]);
-            accountUid.current = profile?.uid || null;
-          }
-          setCurrentUser(profile);
-          setUserProfile(profile);
-          setProfileError('');
-          setAuthChecking(false);
-        },
-        error => {
-          setProfileError(authMessage(error));
-          setAuthChecking(false);
-        }
-      );
-    }
     let active = true;
     let generation = 0;
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -215,6 +195,13 @@ export default function App() {
   }
 
   const workspace = workspaceFor(appAudience, userProfile);
+  const merchantType = isLegacyMerchantType(userProfile.merchantType)
+    ? userProfile.merchantType
+    : userProfile.merchantBusinessIds?.restaurant?.length
+      ? 'restaurant'
+      : userProfile.merchantBusinessIds?.grocery?.length
+        ? 'grocery'
+        : undefined;
 
   // 1. Admin workspace
   if (workspace === 'admin') {
@@ -299,7 +286,7 @@ export default function App() {
               userProfile.transportOperatorId ? (
                 TransportOperatorDashboard ? <TransportOperatorDashboard key={currentUser.uid} userId={currentUser.uid}/> : <p role="alert">Transport operations are not included in this app build.</p>
               ) : (
-                MerchantPortal ? <MerchantPortal key={currentUser.uid} userId={currentUser.uid} activeBookings={bookings} merchantId={userProfile.merchantId || userProfile.merchantBusinessIds?.restaurant?.[0] || userProfile.merchantBusinessIds?.grocery?.[0]} merchantType={userProfile.merchantType || (userProfile.merchantBusinessIds?.restaurant?.length ? 'restaurant' : userProfile.merchantBusinessIds?.grocery?.length ? 'grocery' : undefined)}/> : <p role="alert">Merchant operations are not included in this app build.</p>
+                MerchantPortal && merchantType ? <MerchantPortal key={currentUser.uid} userId={currentUser.uid} activeBookings={bookings} merchantId={userProfile.merchantId || userProfile.merchantBusinessIds?.restaurant?.[0] || userProfile.merchantBusinessIds?.grocery?.[0]} merchantType={merchantType}/> : <p role="alert">This seller vertical is not enabled in the current merchant workspace.</p>
               )
             ) : (
               DriverApp ? <DriverApp key={currentUser.uid} userId={currentUser.uid} userName={userProfile.name} activeBookings={bookings} detectedLat={locationHook.coords?.latitude} detectedLng={locationHook.coords?.longitude}/> : <p role="alert">Driver operations are not included in this app build.</p>
