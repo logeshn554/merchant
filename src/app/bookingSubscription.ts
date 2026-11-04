@@ -2,6 +2,7 @@ import type { Booking, UserProfile } from '../types';
 import type { MerchantBookingOutlet } from '../data/firebaseHelper';
 import { subscriptionGroup } from '../data/subscriptionGroup';
 import { workspaceFor } from './workspace';
+import { isLegacyMerchantType } from '../domain/merchant';
 
 type Stop = () => void;
 type Receive = (bookings: Booking[]) => void;
@@ -27,11 +28,12 @@ export function subscribeWorkspaceBookings(
   receive([]);
   try {
     const workspace = workspaceFor(audience, profile);
+    const primaryMerchantType = isLegacyMerchantType(profile.merchantType) ? profile.merchantType : undefined;
     const merchantOutlets: MerchantBookingOutlet[] = [
-      ...(profile.merchantId && profile.merchantType ? [{ merchantId: profile.merchantId, merchantType: profile.merchantType }] : []),
+      ...(profile.merchantId && primaryMerchantType ? [{ merchantId: profile.merchantId, merchantType: primaryMerchantType }] : []),
       ...(profile.merchantBusinessIds?.restaurant || []).map(merchantId => ({ merchantId, merchantType: 'restaurant' as const })),
       ...(profile.merchantBusinessIds?.grocery || []).map(merchantId => ({ merchantId, merchantType: 'grocery' as const })),
-      ...Object.entries(profile.merchantStaffAccess || {}).filter(([, grant]) => Array.isArray(grant?.permissions) && grant.permissions.includes('orders') && ['restaurant', 'grocery'].includes(grant?.merchantType)).map(([merchantId, grant]) => ({ merchantId, merchantType: grant.merchantType })),
+      ...Object.entries(profile.merchantStaffAccess || {}).flatMap(([merchantId, grant]) => isLegacyMerchantType(grant?.merchantType) && Array.isArray(grant.permissions) && grant.permissions.includes('orders') ? [{ merchantId, merchantType: grant.merchantType }] : []),
     ];
     const stop = workspace === 'admin'
       ? listeners.listenToBookings(publish, group.fail)

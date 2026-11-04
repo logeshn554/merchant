@@ -1,3 +1,5 @@
+import type { DeliveryProvider, FulfillmentMethod as CommerceFulfillmentMethod, OrderType, SellerVertical } from './domain/merchant';
+
 export interface UserProfile {
   phoneVerified?: boolean;
   requestedRole?: 'customer' | 'driver' | 'merchant';
@@ -18,9 +20,9 @@ export interface UserProfile {
   defaultAddressId?: string;
   defaultAddress?: string;
   merchantId?: string;
-  merchantType?: 'restaurant' | 'grocery';
-  merchantBusinessIds?: { restaurant?: string[]; grocery?: string[] };
-  merchantStaffAccess?: Record<string, { merchantType: 'restaurant' | 'grocery'; ownerUid: string; permissions: Array<'orders' | 'catalog' | 'business'> }>;
+  merchantType?: SellerVertical;
+  merchantBusinessIds?: Partial<Record<SellerVertical, string[]>>;
+  merchantStaffAccess?: Record<string, { merchantType: SellerVertical; ownerUid: string; permissions: Array<'orders' | 'catalog' | 'business' | 'settlements'> }>;
   transportOperatorId?: string;
   preferences?: {
     orderUpdates: boolean;
@@ -221,6 +223,9 @@ export interface Booking {
   customerId: string;
   customerName: string;
   serviceType: 'food' | 'grocery' | 'ride' | 'parcel' | 'takeover' | 'transport';
+  orderType?: OrderType;
+  fulfillmentMethod?: CommerceFulfillmentMethod;
+  deliveryProvider?: DeliveryProvider;
   /**
    * Full order state machine:
    * pending → (driver offer sent) → driver_offer_pending → accepted → preparing → ready

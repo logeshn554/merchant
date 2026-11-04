@@ -1,4 +1,5 @@
 import type { UserProfile } from '../types';
+import { isLegacyMerchantType } from '../domain/merchant';
 export type AppAudience = 'customer' | 'merchant' | 'driver';
 
 export function workspaceFor(
@@ -16,7 +17,7 @@ export function workspaceFor(
   if (audience === 'merchant') {
     const hasAssignedOutlets = Boolean(
       profile.transportOperatorId?.trim() ||
-      (profile.merchantId?.trim() && ['restaurant', 'grocery'].includes(profile.merchantType || '')) ||
+      (profile.merchantId?.trim() && isLegacyMerchantType(profile.merchantType)) ||
       (profile.merchantBusinessIds?.restaurant && profile.merchantBusinessIds.restaurant.length > 0) ||
       (profile.merchantBusinessIds?.grocery && profile.merchantBusinessIds.grocery.length > 0) ||
       (profile.merchantStaffAccess && Object.keys(profile.merchantStaffAccess).length > 0)
