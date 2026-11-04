@@ -20,13 +20,13 @@ function message(error: unknown) {
   const code = (error as {code?:string})?.code;
   const rawMsg = error instanceof Error ? error.message : String(error || '');
   if (rawMsg.includes('BILLING_NOT_ENABLED')) {
-    return 'Real SMS requires Firebase Blaze billing. For testing, use phone +911234567890 with OTP 123456, or tap Continue without sign-in.';
+    return 'SMS delivery requires Firebase Blaze billing to be enabled on your Firebase project. Please configure billing or use email sign-in.';
   }
   if (code==='auth/invalid-verification-code') return 'That code is incorrect. Check the SMS and try again.';
   if (code==='auth/code-expired' || code==='auth/session-expired') return 'This code expired. Request a new one.';
   if (code==='auth/too-many-requests') return 'Too many attempts. Please wait before requesting another code.';
-  if (code==='auth/operation-not-allowed' || code==='auth/invalid-app-credential' || code==='auth/captcha-check-failed') return 'Phone verification is unavailable. You can tap Continue without sign-in below.';
-  return error instanceof Error && error.message.trim() && !['undefined','null'].includes(error.message) ? error.message : 'We could not verify your phone. You can tap Continue without sign-in below.';
+  if (code==='auth/operation-not-allowed' || code==='auth/invalid-app-credential' || code==='auth/captcha-check-failed') return 'Phone verification is currently unavailable. Please use email sign-in or contact support.';
+  return error instanceof Error && error.message.trim() && !['undefined','null'].includes(error.message) ? error.message : 'We could not verify your phone number. Please try again.';
 }
 
 export default function PhoneAccountFlow({mode = 'signin', onBack, onModeChange}: {mode?:'signup'|'signin'; onBack?:()=>void; onModeChange?:(mode:'signup'|'signin')=>void}) {
@@ -72,19 +72,12 @@ export default function PhoneAccountFlow({mode = 'signin', onBack, onModeChange}
   let canonicalPhone=phone.replace(/[\s()-]/g,'');
   if (canonicalPhone.startsWith('91') && canonicalPhone.length === 12) {
     canonicalPhone = '+' + canonicalPhone;
-  } else if (/^\d{10}$/.test(canonicalPhone) || canonicalPhone === '1234567890') {
+  } else if (/^\d{10}$/.test(canonicalPhone)) {
     canonicalPhone = '+91' + canonicalPhone;
   }
-  const isTestPhone = canonicalPhone === '+911234567890' || canonicalPhone.includes('1234567890');
 
   const sendCode=async()=>{
-    if (isTestPhone) {
-      setStep('code');
-      setCode('123456');
-      setNotice('Test phone detected! Verification code 123456 filled in.');
-      return;
-    }
-    if(!/^\+[1-9]\d{7,14}$/.test(canonicalPhone))throw new Error('Enter a phone number with country code, such as +911234567890.');
+    if(!/^\+[1-9]\d{7,14}$/.test(canonicalPhone))throw new Error('Enter a phone number with country code, such as +91 98765 43210.');
     if(Date.now()<resendAt)throw new Error('Please wait before requesting another code.');
     if(nativePhoneAuth) {
       if(!Capacitor.isPluginAvailable('FirebaseAuthentication'))throw new Error('Phone OTP is not configured in this app build. Please contact support.');
@@ -111,10 +104,6 @@ export default function PhoneAccountFlow({mode = 'signin', onBack, onModeChange}
     try {
       if(step==='phone'){await sendCode();return;}
       if(step==='code'){
-        if (code === '123456' || isTestPhone) {
-          await finish('test-token-+911234567890');
-          return;
-        }
         if(!/^\d{6}$/.test(code))throw new Error('Enter the six-digit SMS code.');
         if(nativePhoneAuth){
           nativePending.current=true;
@@ -149,7 +138,7 @@ export default function PhoneAccountFlow({mode = 'signin', onBack, onModeChange}
   const appRoleLabel = requestedRole === 'merchant' ? 'BUSINESS PARTNER' : requestedRole === 'driver' ? 'DELIVERY PARTNER' : 'ALLGO ACCOUNT';
 
   return <main className="auth-shell safe-area-top safe-area-bottom"><section className="auth-panel" data-screen="phone" data-partner-screen={requestedRole !== 'customer' ? (requestedRole === 'merchant' ? 'merchant-auth' : 'driver-auth') : undefined}>{onBack && <button className="auth-back" disabled={busy} aria-label="Previous registration step" onClick={back}><ArrowLeft size={21}/></button>}<div className="auth-wordmark">All<span>Go</span></div><p className="auth-eyebrow">{appRoleLabel}</p><h1>{step==='phone'?'Start with your phone.':'Check your messages.'}</h1><p className="auth-description">{step==='phone'?'We’ll send an SMS code to verify your number and sign in.':`Enter the code sent to ${canonicalPhone}.`}</p><form className="auth-form" onSubmit={submit}>
-    {step==='phone'&&<><label>Phone number with country code<input type="tel" autoComplete="tel" name="phone" required maxLength={25} placeholder="+91 12345 67890" value={phone} disabled={busy} onChange={event=>setPhone(event.target.value)}/><small className="text-slate-500 block mt-1">For testing without SMS billing, use <strong>+911234567890</strong> (OTP 123456)</small></label>{!nativePhoneAuth&&<div id="phone-recaptcha"/>}</>}
+    {step==='phone'&&<><label>Phone number with country code<input type="tel" autoComplete="tel" name="phone" required maxLength={25} placeholder="+91 98765 43210" value={phone} disabled={busy} onChange={event=>setPhone(event.target.value)}/></label>{!nativePhoneAuth&&<div id="phone-recaptcha"/>}</>}
     {step==='code'&&<><label>Six-digit verification code<input className="auth-otp-input" name="one-time-code" inputMode="numeric" enterKeyHint="done" autoComplete="one-time-code" autoFocus pattern="[0-9]{6}" required maxLength={6} value={code} disabled={busy} onChange={event=>setCode(event.target.value.replace(/\D/g,''))}/></label><button type="button" className="auth-text-link" disabled={busy||resendWait>0} onClick={()=>{setStep('phone');setVerificationId('');setCode('');setNotice('Request a new code for this number.');}}>{resendWait?`Request another code in ${resendWait}s`:'Request another code'}</button></>}
     <p className="auth-legal">By continuing, you agree to {business.terms ? <a href={business.terms} target="_blank" rel="noopener noreferrer">the Terms of Service</a> : 'the AllGo Terms of Service'} and acknowledge {business.privacy ? <a href={business.privacy} target="_blank" rel="noopener noreferrer">the Privacy Policy</a> : 'the AllGo Privacy Policy'}.</p>
     {error&&<p role="alert" className="auth-error">{error}</p>}{notice&&<p role="status" className="auth-notice">{notice}</p>}<button type="submit" className="auth-primary" disabled={busy}>{busy?<><LoaderCircle size={18} className="animate-spin"/>Please wait…</>:<>{step==='phone'?'Send verification code':'Verify & Sign In'}<ArrowRight size={18}/></>}</button>

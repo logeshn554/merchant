@@ -46,44 +46,6 @@ function endAccountSession(logout: boolean) {
   });
 }
 
-export async function signInDemoAccount(role: 'customer' | 'driver' | 'merchant' = appAudience): Promise<UserProfile> {
-  await teardown.wait();
-  if (useNeonAccounts) {
-    try {
-      const email = role === 'merchant' ? 'merchant@allgo.in' : role === 'driver' ? 'driver@allgo.in' : 'customer@allgo.in';
-      const result = await acceptAccountSession(await accountRequest<{token?:string;profile:UserProfile}>('/auth/login','POST',{email, password: 'AllGo@123'}));
-      if (result) return result;
-    } catch {
-      // If server is offline or unreachable, fall back to client demo profile
-    }
-  }
-  const demoProfile: UserProfile = {
-    uid: `demo-${role}`,
-    email: `${role}-demo@allgo.app`,
-    name: role === 'customer' ? 'Customer (+911234567890)' : role === 'merchant' ? 'The Rameshwaram Cafe (+911234567890)' : 'Rajesh Kumar (Partner)',
-    role,
-    phone: '+911234567890',
-    phoneVerified: true,
-    emailVerified: true,
-    serviceIdentityEnabled: false,
-    createdAt: '2026-01-01T00:00:00.000Z',
-    approvalStatus: 'active',
-    merchantId: role === 'merchant' ? 'res-1' : undefined,
-    merchantType: role === 'merchant' ? 'restaurant' : undefined,
-    merchantBusinessIds: role === 'merchant' ? { restaurant: ['res-1'] } : undefined,
-    merchantStaffAccess: role === 'merchant' ? { 'res-1': { merchantType: 'restaurant', ownerUid: 'demo-merchant-owner', permissions: ['orders', 'catalog', 'business'] } } : undefined,
-    transportOperatorId: role === 'driver' ? 'demo-operator-1' : undefined,
-  };
-  sessionGeneration++;
-  try {
-    await saveSession('a'.repeat(64));
-  } catch (err) {
-    console.warn('Native session storage skipped for demo session:', err);
-  }
-  publish(demoProfile);
-  return demoProfile;
-}
-
 export async function accountRequest<T>(path: string, method = 'GET', body?: unknown): Promise<T> {
   const tryEndpoint = async (baseUrl: string) => {
     const controller = new AbortController();
@@ -143,24 +105,12 @@ async function acceptAccountSession(result: { token?: string; profile: UserProfi
 }
 export async function signInAccount(email: string, password: string, name?: string, registration?: {phoneIdToken:string;requestedRole:'customer'|'driver'|'merchant'}) {
   await teardown.wait();
-  try {
-    return await acceptAccountSession(await accountRequest<{token?:string;profile:UserProfile}>(name === undefined ? '/auth/login' : '/auth/signup','POST',{email,password,name,...registration}));
-  } catch (err) {
-    console.warn('Account server unreachable for account sign-in, auto-loading demo profile:', err);
-    return await signInDemoAccount(appAudience);
-  }
+  return await acceptAccountSession(await accountRequest<{token?:string;profile:UserProfile}>(name === undefined ? '/auth/login' : '/auth/signup','POST',{email,password,name,...registration}));
 }
 export async function signInPhoneAccount(phoneIdToken: string, requestedRole?: 'customer'|'driver'|'merchant') {
-  const tokenPayload = (!phoneIdToken || phoneIdToken === '123456' || phoneIdToken.includes('1234567890'))
-    ? 'test-token-+911234567890'
-    : phoneIdToken;
+  if (!phoneIdToken) throw new Error('Phone verification token is required.');
   await teardown.wait();
-  try {
-    return await acceptAccountSession(await accountRequest<{token?:string;profile:UserProfile}>('/auth/phone-login','POST',{phoneIdToken: tokenPayload, requestedRole}));
-  } catch (err) {
-    console.warn('Account server unreachable for phone login, falling back to local demo profile:', err);
-    return await signInDemoAccount(requestedRole || appAudience);
-  }
+  return await acceptAccountSession(await accountRequest<{token?:string;profile:UserProfile}>('/auth/phone-login','POST',{phoneIdToken, requestedRole}));
 }
 async function connectServiceIdentity(profile: UserProfile): Promise<UserProfile> {
   hasServiceIdentity = false;
@@ -191,8 +141,8 @@ export function watchAccount(listener: (value: UserProfile | null) => void, onEr
       if (activeProfile) {
         publish(activeProfile);
       } else {
-        console.warn('Account server unreachable on initial load, auto-loading demo workspace:', error);
-        void signInDemoAccount(appAudience);
+        publish(null);
+        onError(error);
       }
     }
   });

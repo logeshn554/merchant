@@ -33,7 +33,7 @@ export function authMessage(error: unknown): string {
   };
   const rawMsg = error instanceof Error ? error.message : String(error || '');
   if (rawMsg.includes('BILLING_NOT_ENABLED')) {
-    return 'SMS requires Firebase Blaze billing. For testing, use phone +911234567890 with OTP 123456, or use Email & Password.';
+    return 'SMS delivery requires Firebase Blaze billing to be enabled on your Firebase project. Please enable billing or use Email & Password.';
   }
   if (useNeonAccounts && error instanceof Error && error.message.trim() && !['undefined','null'].includes(error.message.trim())) return error.message;
   return (code && messages[code]) || 'We could not complete this request. Please try again.';
