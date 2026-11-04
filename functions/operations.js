@@ -7,7 +7,8 @@ const { assertStockBaseline } = require('./stockBaseline');
 const { recordStockMovement } = require('./inventoryJournal');
 const { settlementPolicy } = require('./settlementPolicy');
 const { transportFleetVehicleSuitable } = require('./transportPolicy');
-const { merchantHasBusiness, merchantHasPermission, merchantStaffGrant, normalizeMerchantBusinessIds } = require('./merchantAccess');
+const { merchantHasBusiness, merchantHasPermission, merchantStaffGrant, normalizeMerchantBusinessIds, TYPES, businessCollection } = require('./merchantAccess');
+const { catalogEnvelope } = require('./catalogEnvelope');
 const { journal } = require('./journalPolicy');
 function operationsFunctions({ onCall, db, REGION, HttpsError, Timestamp, documentId, cleanText }) {
   const services = ['food','grocery','ride','parcel','takeover','transport'];
@@ -54,11 +55,12 @@ function operationsFunctions({ onCall, db, REGION, HttpsError, Timestamp, docume
       if (account?.role !== 'merchant' || account.disabled === true || account.suspended === true) throw new HttpsError('permission-denied', 'An active merchant account is required.');
       let assigned;
       try { assigned = normalizeMerchantBusinessIds(account.merchantBusinessIds); } catch { throw new HttpsError('failed-precondition', 'Merchant business access needs operations review.'); }
-      for (const type of ['restaurant', 'grocery']) if (account.merchantType === type && account.merchantId && !assigned[type].includes(account.merchantId)) assigned[type].push(account.merchantId);
-      for (const [id, grant] of Object.entries(account.merchantStaffAccess || {})) if (['restaurant', 'grocery'].includes(grant?.merchantType) && merchantStaffGrant(account, id, grant.merchantType) && !assigned[grant.merchantType].includes(id)) assigned[grant.merchantType].push(id);
-      const entries = await Promise.all(['restaurant', 'grocery'].flatMap(type => assigned[type].map(async id => {
+      for (const type of TYPES) if (account.merchantType === type && account.merchantId && !assigned[type].includes(account.merchantId)) assigned[type].push(account.merchantId);
+      for (const [id, grant] of Object.entries(account.merchantStaffAccess || {})) if (TYPES.includes(grant?.merchantType) && merchantStaffGrant(account, id, grant.merchantType) && !assigned[grant.merchantType].includes(id)) assigned[grant.merchantType].push(id);
+      for (const [id, assignment] of Object.entries(account.merchantBusinessAssignments || {})) if (TYPES.includes(assignment?.vertical) && Array.isArray(assignment.permissions) && !assigned[assignment.vertical].includes(id)) assigned[assignment.vertical].push(id);
+      const entries = await Promise.all(TYPES.flatMap(type => assigned[type].map(async id => {
         if (!merchantHasBusiness(account, id, type)) return null;
-        const snapshot = await db.doc(`${type === 'restaurant' ? 'restaurants' : 'grocery_stores'}/${id}`).get(), business = snapshot.data();
+        const snapshot = await db.doc(`${businessCollection(type)}/${id}`).get(), business = snapshot.data();
         if (!snapshot.exists || business.merchantType !== type) return null;
         const grant = merchantStaffGrant(account, id, type);
         if (business.onboardingStatus === 'approved' && business.merchantEligibility?.status === 'verified') return { id, merchantType: type, name: typeof business.name === 'string' && business.name.trim() ? business.name : id, address: typeof business.address === 'string' ? business.address : '', timeZone: typeof business.timeZone === 'string' ? business.timeZone : 'Asia/Kolkata', profileRevision: Number.isSafeInteger(business.profileRevision) ? business.profileRevision : 0, acceptingOrders: business.acceptingOrders === true, ...(typeof business.pausedUntil === 'string' ? { pausedUntil: business.pausedUntil } : {}), ...(typeof business.pausedAt === 'string' ? { pausedAt: business.pausedAt } : {}), ...(typeof business.pausedReason === 'string' ? { pausedReason: business.pausedReason } : {}), ...(grant ? { permissions: grant.permissions } : {}), ...(business.ownerId === uid && typeof business.applicationId === 'string' ? { applicationId: business.applicationId } : {}), canManageStaff: business.ownerId === uid };
@@ -280,16 +282,16 @@ function operationsFunctions({ onCall, db, REGION, HttpsError, Timestamp, docume
     }),
     createMerchantBusiness: onCall({ operation: 'createMerchantBusiness', region: REGION }, async request => {
       const uid = await admin(request), data = request.data || {}, type = data.merchantType, id = documentId(data.merchantId, 'Business ID'), requestId = documentId(data.requestId, 'Request ID');
-      if (!['restaurant', 'grocery'].includes(type)) throw new HttpsError('invalid-argument', 'Choose a business type.');
+      if (!TYPES.includes(type)) throw new HttpsError('invalid-argument', 'Choose a business type.');
       const name = cleanText(data.name, 'Business name', 120), address = cleanText(data.address, 'Business address', 300), reason = cleanText(data.reason, 'Setup reason', 500), timeZone = cleanText(data.timeZone, 'Time zone', 80), applicationId = data.applicationId ? documentId(data.applicationId, 'Application ID') : null;
       try { new Intl.DateTimeFormat('en', { timeZone }).format(); } catch { throw new HttpsError('invalid-argument', 'Choose a valid time zone.'); }
       const setup = { name, address, timeZone, merchantType: type, ...(applicationId ? { applicationId } : {}) };
       return db.runTransaction(async tx => {
-        const ref = db.doc(`${type === 'restaurant' ? 'restaurants' : 'grocery_stores'}/${id}`), eventRef = db.doc(`merchant_setup_requests/${requestId}`), appRef = applicationId ? db.doc(`partner_applications/${applicationId}`) : null, [existing, event, application] = await Promise.all([tx.get(ref), tx.get(eventRef), ...(appRef ? [tx.get(appRef)] : [Promise.resolve(null)])]);
+        const ref = db.doc(`${businessCollection(type)}/${id}`), eventRef = db.doc(`merchant_setup_requests/${requestId}`), appRef = applicationId ? db.doc(`partner_applications/${applicationId}`) : null, [existing, event, application] = await Promise.all([tx.get(ref), tx.get(eventRef), ...(appRef ? [tx.get(appRef)] : [Promise.resolve(null)])]);
         if (event.exists) { const prior = event.data(); if (prior.actorId !== uid || prior.merchantId !== id || prior.reason !== reason || !Object.entries(setup).every(([key, value]) => prior.setup?.[key] === value)) throw new HttpsError('already-exists', 'This setup request reference was already used.'); return { merchantId: id, status: 'draft' }; }
         if (existing.exists) throw new HttpsError('already-exists', 'This business ID already exists. Existing data was preserved.');
-        if (applicationId && (!application?.exists || !['restaurant', 'grocery'].includes(application.data().type) || application.data().type !== type || !['submitted', 'needs_information'].includes(application.data().status) || application.data().businessId)) throw new HttpsError('failed-precondition', 'Link the business to a current application of the same type that has no business assigned.');
-        tx.create(ref, { ...setup, ...(applicationId ? { ownerId: application.data().userId } : {}), id, acceptingOrders: false, onboardingStatus: 'draft', weeklyHours: {}, closedDates: [], closureRevision: 0, createdAt: Timestamp.now(), image: '', rating: 0, ratingCount: 0, deliveryTime: '', ...(type === 'restaurant' ? { cuisine: '', pureVeg: false } : {}) });
+        if (applicationId && (!application?.exists || !TYPES.includes(application.data().type) || application.data().type !== type || !['submitted', 'needs_information'].includes(application.data().status) || application.data().businessId)) throw new HttpsError('failed-precondition', 'Link the business to a current application of the same type that has no business assigned.');
+        tx.create(ref, { ...setup, ...(applicationId ? { ownerId: application.data().userId } : {}), id, sellerVertical: type, acceptingOrders: false, onboardingStatus: 'draft', verificationStatus: 'draft', capabilities: {}, supportedFulfillmentMethods: [], weeklyHours: {}, closedDates: [], closureRevision: 0, createdAt: Timestamp.now(), image: '', rating: 0, ratingCount: 0, deliveryTime: '', ...(type === 'restaurant' ? { cuisine: '', pureVeg: false } : {}) });
         if (applicationId) {
           const revision = (application.data().revision || 0) + 1, now = new Date().toISOString();
           tx.update(appRef, { businessId: id, revision, updatedAt: now });
@@ -298,6 +300,27 @@ function operationsFunctions({ onCall, db, REGION, HttpsError, Timestamp, docume
         tx.create(eventRef, { actorId: uid, merchantId: id, setup, reason, createdAt: Timestamp.now() });
         audit(tx, uid, 'merchant_business_created', ref.path);
         return { merchantId: id, status: 'draft' };
+      });
+    }),
+    saveMerchantCatalogEnvelope: onCall({ operation: 'saveMerchantCatalogEnvelope', region: REGION }, async request => {
+      const uid = request.auth?.uid, data = request.data || {}, requestId = documentId(data.requestId, 'Catalog change reference');
+      if (!uid) throw new HttpsError('unauthenticated', 'Sign in to manage catalog.');
+      let item;
+      try { item = catalogEnvelope(data.item); } catch (error) { throw new HttpsError('invalid-argument', error.message); }
+      if (!TYPES.includes(item.sellerVertical) || !['home_kitchen', 'handmade'].includes(item.sellerVertical)) throw new HttpsError('failed-precondition', 'This catalog path is reserved for the new seller verticals.');
+      const businessRef = db.doc(`merchant_businesses/${item.businessId}`), itemRef = businessRef.collection('catalog_items').doc(item.id), commandRef = businessRef.collection('catalog_commands').doc(requestId);
+      return db.runTransaction(async tx => {
+        const [account, business, existing, command] = await Promise.all([tx.get(db.doc(`users/${uid}`)), tx.get(businessRef), tx.get(itemRef), tx.get(commandRef)]);
+        if (!merchantHasPermission(account.data(), item.businessId, item.sellerVertical, 'catalog')) throw new HttpsError('permission-denied', 'This catalog is not assigned to your account.');
+        if (!business.exists || business.data().sellerVertical !== item.sellerVertical || business.data().ownerId !== account.data()?.uid && !merchantStaffGrant(account.data(), item.businessId, item.sellerVertical)) throw new HttpsError('permission-denied', 'The catalog business is not authorized.');
+        if (item.publicationStatus === 'published' && (business.data().onboardingStatus !== 'approved' || business.data().merchantEligibility?.status !== 'verified')) throw new HttpsError('failed-precondition', 'Only an approved and verified business can publish catalog items.');
+        if (command.exists) { const prior = command.data(); if (prior.actorId !== uid || prior.item?.id !== item.id || prior.item?.revision !== item.revision) throw new HttpsError('already-exists', 'This catalog change reference was already used.'); return { saved: true, itemId: item.id, revision: prior.revision }; }
+        const currentRevision = existing.exists ? Number(existing.data().revision) : -1;
+        if (item.revision !== currentRevision + 1) throw new HttpsError('aborted', 'The catalog item changed. Refresh before saving.');
+        tx.set(itemRef, { ...item, updatedAt: Timestamp.now(), createdAt: existing.data()?.createdAt || Timestamp.now() });
+        tx.create(commandRef, { actorId: uid, item, revision: item.revision, createdAt: Timestamp.now() });
+        audit(tx, uid, 'merchant_catalog_envelope_saved', itemRef.path);
+        return { saved: true, itemId: item.id, revision: item.revision };
       });
     }),
     exportAccountPage: onCall({ operation: 'exportAccountPage', region: REGION }, async request => {

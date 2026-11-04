@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, getDoc, getDocs, collection, query, where, setDoc, updateDoc, deleteDoc, Timestamp, setLogLevel } from 'firebase/firestore';
+import { doc, getDoc, getDocs, collection, query, where, limit, setDoc, updateDoc, deleteDoc, Timestamp, setLogLevel } from 'firebase/firestore';
 
 setLogLevel('silent');
 let env;
@@ -22,6 +22,10 @@ beforeEach(async () => {
     await setDoc(doc(db, 'bookings', 'branch_food'), { bookingId: 'branch_food', customerId: 'customer', merchantId: 'branch_2', serviceType: 'food', status: 'ready', paymentStatus: 'paid' });
     await setDoc(doc(db, 'bookings', 'branch_grocery'), { bookingId: 'branch_grocery', customerId: 'customer', merchantId: 'branch_2', serviceType: 'grocery', status: 'ready', paymentStatus: 'paid' });
     await setDoc(doc(db, 'bookings', 'staff_market_order'), { bookingId: 'staff_market_order', customerId: 'customer', merchantId: 'market_1', serviceType: 'grocery', status: 'ready', paymentStatus: 'paid' });
+    await setDoc(doc(db, 'users', 'maker'), { uid: 'maker', name: 'Maker', email: 'maker@example.test', role: 'merchant', createdAt: '2026-10-24', merchantBusinessAssignments: { maker_1: { vertical: 'handmade', permissions: ['catalog', 'orders'] } } });
+    await setDoc(doc(db, 'merchant_businesses', 'maker_1'), { id: 'maker_1', ownerId: 'maker', sellerVertical: 'handmade', merchantType: 'handmade', onboardingStatus: 'approved', merchantEligibility: { status: 'verified' } });
+    await setDoc(doc(db, 'merchant_businesses/maker_1/catalog_items', 'basket'), { id: 'basket', businessId: 'maker_1', sellerVertical: 'handmade', itemType: 'handmade_product', publicationStatus: 'published', availabilityStatus: 'available', priceCents: 120000 });
+    await setDoc(doc(db, 'merchant_businesses/maker_1/catalog_items', 'draft'), { id: 'draft', businessId: 'maker_1', sellerVertical: 'handmade', itemType: 'handmade_product', publicationStatus: 'draft', availabilityStatus: 'available', priceCents: 120000 });
   });
 });
 const dbFor = uid => env.authenticatedContext(uid).firestore();
@@ -29,7 +33,7 @@ const dbFor = uid => env.authenticatedContext(uid).firestore();
 test('assigned merchant outlet access is type scoped for order reads and queries', async () => {
   const db = dbFor('merchant');
   await assertSucceeds(getDoc(doc(db, 'bookings', 'branch_food')));
-  await assertSucceeds(getDocs(query(collection(db, 'bookings'), where('merchantId', '==', 'branch_2'), where('serviceType', '==', 'food'))));
+  await assertSucceeds(getDocs(query(collection(db, 'bookings'), where('merchantId', '==', 'branch_2'), where('serviceType', '==', 'food'), limit(50))));
   await assertFails(getDoc(doc(db, 'bookings', 'branch_grocery')));
   await assertFails(getDoc(doc(dbFor('other'), 'bookings', 'branch_food')));
 });
@@ -80,4 +84,12 @@ test('merchant settlement balances and entries are owner scoped and server writt
   await assertFails(getDoc(doc(dbFor('other'), 'merchant_ledger/branch_2/entries/order_1')));
   await assertFails(setDoc(doc(merchantDb, 'merchant_ledger/branch_2/entries/forged'), { merchantId: 'branch_2', serviceType: 'food', payableCents: 900000 }));
   await assertFails(updateDoc(balance, { availableCents: 900000 }));
+});
+
+test('new aggregate catalog exposes only approved published items and never client writes', async () => {
+  const makerDb = dbFor('maker');
+  await assertSucceeds(getDoc(doc(makerDb, 'merchant_businesses/maker_1/catalog_items/basket')));
+  await assertFails(getDoc(doc(makerDb, 'merchant_businesses/maker_1/catalog_items/draft')));
+  await assertFails(setDoc(doc(makerDb, 'merchant_businesses/maker_1/catalog_items/forged'), { id: 'forged' }));
+  await assertFails(getDoc(doc(dbFor('other'), 'merchant_businesses/maker_1/catalog_items/basket')));
 });

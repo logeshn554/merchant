@@ -48,7 +48,7 @@ const { scanBytes } = require('./clamScanner');
 const { getStorage } = require('firebase-admin/storage');
 const { catalogSearchFunctions } = require('./catalogSearch');
 const { catalogPhotoUploadFunctions } = require('./catalogPhotoUpload');
-const { contractFor, driverTransition, merchantTransition, requireMerchantReady, requireMerchantPickup } = require('./fulfillmentPolicy');
+const { contractFor, driverTransition, merchantTransition, requireMerchantReady, requireMerchantPickup, orderContract } = require('./fulfillmentPolicy');
 const { journal } = require('./journalPolicy');
 const { addCents } = require('./moneyPolicy');
 const { assertCodAmount, assertCodAttempt } = require('./codBookingPolicy');
@@ -393,8 +393,18 @@ function normalizeItems(input) {
 
 async function priceLeg(uid, input) {
   const serviceType = input?.serviceType || input?.type;
-  const allowed = ['food', 'grocery', 'ride', 'parcel', 'takeover', 'transport'];
+  const allowed = ['food', 'grocery', 'homemade_food', 'handmade', 'ride', 'parcel', 'takeover', 'transport'];
   if (!allowed.includes(serviceType)) throw new HttpsError('invalid-argument', 'Unsupported AllGo service.');
+  const legacyOrderType = serviceType === 'food' ? 'prepared_food' : serviceType === 'grocery' ? 'grocery' : serviceType === 'homemade_food' ? 'made_to_order' : serviceType === 'handmade' ? 'physical_product' : null;
+  let commerceContract;
+  if (legacyOrderType) {
+    try {
+      commerceContract = orderContract(input.orderType || legacyOrderType, input.fulfillmentMethod || 'platform_delivery', input.deliveryProvider || 'allgo');
+    } catch (error) { throw new HttpsError('invalid-argument', error.message); }
+    if (commerceContract.orderType !== legacyOrderType || commerceContract.fulfillmentMethod !== 'platform_delivery' || commerceContract.deliveryProvider !== 'allgo') {
+      throw new HttpsError('failed-precondition', 'This legacy catalog currently supports AllGo platform delivery only.');
+    }
+  }
 
   const customer = await db.doc(`users/${uid}`).get();
   if (!customer.exists) throw new HttpsError('failed-precondition', 'Your customer profile is missing.');
@@ -409,12 +419,14 @@ async function priceLeg(uid, input) {
   let fareBreakdown;
   let pricingRecord;
 
-  if (serviceType === 'food' || serviceType === 'grocery') {
+  if (['food', 'grocery', 'homemade_food', 'handmade'].includes(serviceType)) {
     const items = normalizeItems(detailsInput.items);
-    const catalogId = documentId(serviceType === 'food' ? detailsInput.restaurantId : detailsInput.storeId, serviceType === 'food' ? 'Restaurant' : 'Store');
-    const parentPath = serviceType === 'food' ? `restaurants/${catalogId}` : `grocery_stores/${catalogId}`;
+    const newVertical = serviceType === 'homemade_food' ? 'home_kitchen' : serviceType === 'handmade' ? 'handmade' : null;
+    const catalogId = documentId(newVertical ? detailsInput.businessId : serviceType === 'food' ? detailsInput.restaurantId : detailsInput.storeId, newVertical ? 'Business' : serviceType === 'food' ? 'Restaurant' : 'Store');
+    const parentPath = newVertical ? `merchant_businesses/${catalogId}` : serviceType === 'food' ? `restaurants/${catalogId}` : `grocery_stores/${catalogId}`;
     const parent = await db.doc(parentPath).get();
     if (!parent.exists) throw new HttpsError('failed-precondition', 'This store is no longer available.');
+    if (newVertical && (parent.data().sellerVertical !== newVertical || parent.data().onboardingStatus !== 'approved' || parent.data().merchantEligibility?.status !== 'verified')) throw new HttpsError('failed-precondition', 'This seller business is not approved for customer orders.');
     merchantOwnerId = parent.data().ownerId;
     try { if (!merchantOpen(parent.data())) throw new HttpsError('failed-precondition', 'This partner is closed or not accepting orders.'); }
     catch (error) { if (error instanceof HttpsError) throw error; throw new HttpsError('failed-precondition', 'Partner opening hours need operations review.'); }
@@ -423,7 +435,7 @@ async function priceLeg(uid, input) {
       .where('status', 'in', ['pending', 'preparing'])
       .get();
     assertOutletCapacity(parent.data(), activeOrdersSnap.size);
-    const catalogPath = serviceType === 'food' ? 'menu_items' : 'products';
+    const catalogPath = newVertical ? 'catalog_items' : serviceType === 'food' ? 'menu_items' : 'products';
     const itemDocs = await Promise.all(items.map(({ id }) => db.doc(`${parentPath}/${catalogPath}/${id}`).get()));
     const canonicalItems = [];
     for (let index = 0; index < items.length; index += 1) {
@@ -432,21 +444,31 @@ async function priceLeg(uid, input) {
       if (!doc.exists) throw new HttpsError('failed-precondition', 'An item in your cart is no longer available.');
       const catalogItem = doc.data();
       let resolved;
-      try { resolved = checkoutCatalogItem(catalogItem, requested.variantId, serviceType, requested.quantity, Date.now(), requested.addOnIds || []); }
+      try {
+        if (newVertical) {
+          if (catalogItem.sellerVertical !== newVertical || catalogItem.publicationStatus !== 'published' || catalogItem.availabilityStatus !== 'available') throw new Error('This catalog item is not currently available.');
+          if (!Number.isSafeInteger(catalogItem.priceCents) || catalogItem.priceCents <= 0) throw new Error('This catalog item has an invalid price.');
+          if (Number.isSafeInteger(catalogItem.availableStock) && catalogItem.availableStock < requested.quantity) throw new Error('This catalog item has insufficient stock.');
+          resolved = { price: catalogItem.priceCents / 100, unitCents: catalogItem.priceCents, ...(requested.customization ? { customization: cleanText(requested.customization, 'Customization', 1000) } : {}) };
+        } else {
+          resolved = checkoutCatalogItem(catalogItem, requested.variantId, serviceType, requested.quantity, Date.now(), requested.addOnIds || []);
+        }
+      }
       catch (error) { throw new HttpsError('failed-precondition', error.message); }
-      const canonical = { id: doc.id, name: cleanText(catalogItem.name, 'Item name', 120), price: resolved.price, quantity: requested.quantity, ...(requested.variantId ? { variantId: requested.variantId, variantName: resolved.variantName } : {}), ...(requested.addOnIds?.length ? { addOnIds: requested.addOnIds } : {}), ...(resolved.addOns ? { addOns: resolved.addOns } : {}) };
+      const canonical = { id: doc.id, name: cleanText(catalogItem.name, 'Item name', 120), price: resolved.price, quantity: requested.quantity, ...(requested.variantId ? { variantId: requested.variantId, variantName: resolved.variantName } : {}), ...(requested.addOnIds?.length ? { addOnIds: requested.addOnIds } : {}), ...(resolved.addOns ? { addOns: resolved.addOns } : {}), ...(resolved.customization ? { customization: resolved.customization } : {}) };
       canonicalItems.push(canonical);
       price += resolved.unitCents * canonical.quantity;
     }
     const customerNotes = detailsInput.notes ? cleanText(detailsInput.notes, 'Order instructions', 500) : '';
     details = serviceType === 'food'
       ? { restaurantId: catalogId, restaurantName: cleanText(parent.data().name, 'Restaurant name', 120), items: canonicalItems, ...(customerNotes ? { notes: customerNotes } : {}) }
-      : { storeId: catalogId, items: canonicalItems, ...(customerNotes ? { notes: customerNotes } : {}) };
+      : newVertical ? { businessId: catalogId, sellerVertical: newVertical, items: canonicalItems, ...(customerNotes ? { notes: customerNotes } : {}) }
+        : { storeId: catalogId, items: canonicalItems, ...(customerNotes ? { notes: customerNotes } : {}) };
     pickupAddress = cleanText(parent.data().address, 'Merchant pickup address');
     dropAddress = cleanText(input.pickupAddress, 'Delivery address');
     // SEC-06: Reject clearly incomplete delivery addresses early.
     if (dropAddress.trim().length < 10) throw new HttpsError('invalid-argument', 'Enter a complete delivery address for your order.');
-    const pricing = (await db.doc(`service_pricing/${serviceType}`).get()).data();
+    const pricing = (await db.doc(`service_pricing/${serviceType === 'homemade_food' ? 'food' : serviceType === 'handmade' ? 'grocery' : serviceType}`).get()).data();
     pricingRecord = pricing;
     if (!pricing?.enabled || !Array.isArray(pricing.zoneIds) || pricing.zoneIds.length < 1 || pricing.zoneIds.length > 20) throw new HttpsError('failed-precondition', 'Delivery coverage is not configured.');
     const [origins, destinations, zones] = await Promise.all([
@@ -456,7 +478,7 @@ async function priceLeg(uid, input) {
     ]);
     const origin = origins[0], destination = destinations[0];
     if (!origin || !destination || origin.partialMatch || destination.partialMatch) throw new HttpsError('invalid-argument', 'Choose a complete delivery address with a resolved location.');
-    const coverage = checkCoverage(zones.filter(zone => zone.exists).map(zone => ({ ...zone.data(), id: zone.id })), serviceType, origin.location, destination.location, true);
+    const coverage = checkCoverage(zones.filter(zone => zone.exists).map(zone => ({ ...zone.data(), id: zone.id })), serviceType === 'homemade_food' || serviceType === 'handmade' ? 'food' : serviceType, origin.location, destination.location, true);
     const route = await routeBetween(MAPS_API_KEY.value(), origin, destination, 'DRIVE');
     try { priceBreakdown = { ...cartCharges(price, route.distanceMeters, pricing.delivery), taxBps: pricing.delivery.taxBps ?? 0 }; }
     catch (error) { throw new HttpsError('failed-precondition', error.message); }
@@ -557,21 +579,23 @@ async function priceLeg(uid, input) {
   const leg = {
     serviceType,
     type: serviceType,
+    ...(commerceContract ? { orderType: commerceContract.orderType, fulfillmentMethod: commerceContract.fulfillmentMethod, deliveryProvider: commerceContract.deliveryProvider } : {}),
     pickupAddress,
     dropAddress,
     driverId: null,
     settlementContract: contract,
     otp: String(crypto.randomInt(1000, 10000)),
     paymentStatus: 'paid',
-    ...(['food', 'grocery'].includes(serviceType) ? { merchantId: serviceType === 'food' ? details.restaurantId : details.storeId } : {}),
+    ...(['food', 'grocery', 'homemade_food', 'handmade'].includes(serviceType) ? { merchantId: serviceType === 'food' ? details.restaurantId : serviceType === 'grocery' ? details.storeId : details.businessId } : {}),
+    ...(details.sellerVertical ? { sellerVertical: details.sellerVertical } : {}),
     details
   };
-  if (['food', 'grocery'].includes(serviceType)) {
+  if (['food', 'grocery', 'homemade_food', 'handmade'].includes(serviceType)) {
     const agreement = (await db.doc(`merchant_settlement_contracts/${leg.merchantId}`).get()).data();
     if (agreement?.status === 'active' && agreement.acceptedBy === merchantOwnerId && agreement.agreementReference) {
       try { leg.merchantSettlementContract = merchantSettlementPolicy(agreement, leg.merchantId, serviceType); }
       catch (error) { throw new HttpsError('failed-precondition', error.message); }
-    }
+    } else if (['homemade_food', 'handmade'].includes(serviceType)) throw new HttpsError('failed-precondition', 'This business does not have an active settlement agreement.');
   }
   if (priceBreakdown) leg.priceBreakdown = priceBreakdown;
 
@@ -621,6 +645,10 @@ async function priceAndPrepareBooking(uid, input) {
     paymentOrderId: '',
     paymentId: '',
     ...(priced.leg.merchantId ? { merchantId: priced.leg.merchantId } : {}),
+    ...(priced.leg.orderType ? { orderType: priced.leg.orderType } : {}),
+    ...(priced.leg.fulfillmentMethod ? { fulfillmentMethod: priced.leg.fulfillmentMethod } : {}),
+    ...(priced.leg.deliveryProvider ? { deliveryProvider: priced.leg.deliveryProvider } : {}),
+    ...(priced.leg.sellerVertical ? { sellerVertical: priced.leg.sellerVertical } : {}),
     details: priced.leg.details
   };
   if (priced.leg.priceBreakdown) booking.priceBreakdown = priced.leg.priceBreakdown;

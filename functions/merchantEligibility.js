@@ -19,7 +19,7 @@ function merchantEligibilityFunctions({ onCall, onSchedule, db, REGION, HttpsErr
       if (!uid) throw new HttpsError('unauthenticated', 'Sign in.');
       const applicationId = documentId(data.applicationId, 'Application ID'), merchantId = documentId(data.merchantId, 'Merchant ID'), requestId = documentId(data.requestId, 'Decision reference');
       const reason = cleanText(data.reason, 'Eligibility explanation', 1000), merchantType = data.merchantType;
-      if (!['restaurant', 'grocery'].includes(merchantType) || !['verified', 'rejected'].includes(data.status) || !Number.isSafeInteger(data.expectedRevision) || data.expectedRevision < 0) throw new HttpsError('invalid-argument', 'Choose a merchant type, decision and current application revision.');
+      if (!['restaurant', 'home_kitchen', 'grocery', 'handmade'].includes(merchantType) || !['verified', 'rejected'].includes(data.status) || !Number.isSafeInteger(data.expectedRevision) || data.expectedRevision < 0) throw new HttpsError('invalid-argument', 'Choose a merchant type, decision and current application revision.');
       const evidenceIds = data.evidenceIds || [];
       if (!Array.isArray(evidenceIds) || evidenceIds.length > 10 || new Set(evidenceIds).size !== evidenceIds.length) throw new HttpsError('invalid-argument', 'Choose at most ten distinct reviewed documents.');
       evidenceIds.forEach(id => documentId(id, 'Evidence ID'));
@@ -30,12 +30,13 @@ function merchantEligibilityFunctions({ onCall, onSchedule, db, REGION, HttpsErr
       if (!ownerIdBefore) throw new HttpsError('not-found', 'Merchant application not found.');
       const identity = data.status === 'verified' ? await getIdentity(ownerIdBefore) : null;
       return db.runTransaction(async tx => {
-        const applicationRef = db.doc(`partner_applications/${applicationId}`), businessRef = db.doc(`${merchantType === 'restaurant' ? 'restaurants' : 'grocery_stores'}/${merchantId}`), eventRef = businessRef.collection('eligibility_events').doc(requestId);
+        const businessCollection = ['restaurant', 'grocery'].includes(merchantType) ? (merchantType === 'restaurant' ? 'restaurants' : 'grocery_stores') : 'merchant_businesses';
+        const applicationRef = db.doc(`partner_applications/${applicationId}`), businessRef = db.doc(`${businessCollection}/${merchantId}`), eventRef = businessRef.collection('eligibility_events').doc(requestId);
         const [account, applicationSnapshot, businessSnapshot, event, deletion, applicantAccount] = await Promise.all([tx.get(db.doc(`users/${uid}`)), tx.get(applicationRef), tx.get(businessRef), tx.get(eventRef), tx.get(db.doc(`account_deletions/${ownerIdBefore}`)), tx.get(db.doc(`users/${ownerIdBefore}`))]);
         const application = applicationSnapshot.data(), business = businessSnapshot.data(), ownerId = application?.userId;
         if (event.exists) { const prior = event.data(); if (prior.actorId !== uid || JSON.stringify(prior.input) !== JSON.stringify(input)) throw new HttpsError('already-exists', 'This decision reference was already used.'); return { status: prior.input.status, revision: prior.revision }; }
         const applicant = applicantAccount.data();
-        const eligibleApplicantRole = applicant?.role === 'customer' || applicant?.role === 'merchant' && !!applicant.merchantId && ['restaurant', 'grocery'].includes(applicant.merchantType);
+        const eligibleApplicantRole = applicant?.role === 'customer' || applicant?.role === 'merchant' && !!applicant.merchantId && ['restaurant', 'home_kitchen', 'grocery', 'handmade'].includes(applicant.merchantType);
         if (account.data()?.role !== 'admin' || account.data()?.disabled === true || account.data()?.suspended === true || !application || !business || ownerId === uid || !ownerId || !eligibleApplicantRole || applicant?.disabled === true || applicant?.suspended === true || deletion.exists) throw new HttpsError('permission-denied', 'Active independent operations, an eligible applicant, business and account are required.');
         if (ownerId !== ownerIdBefore || application.phone !== applicationBefore.phone) throw new HttpsError('aborted', 'The applicant identity changed. Refresh and review again.');
         if (application.type !== merchantType || application.businessId !== merchantId || business.ownerId !== ownerId || business.applicationId !== applicationId || business.merchantType !== merchantType) throw new HttpsError('failed-precondition', 'The business, application and applicant must have a matching server-owned link.');
@@ -77,7 +78,7 @@ function merchantEligibilityFunctions({ onCall, onSchedule, db, REGION, HttpsErr
   if (onSchedule) exports.expireMerchantEligibility = onSchedule({ schedule: 'every day 00:25', timeZone: 'Asia/Kolkata', region: REGION, maxInstances: 1, timeoutSeconds: 540 }, async () => {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
     let examined = 0, expired = 0;
-    for (const { collection } of [{ collection: 'restaurants' }, { collection: 'grocery_stores' }]) {
+    for (const { collection } of [{ collection: 'restaurants' }, { collection: 'grocery_stores' }, { collection: 'merchant_businesses' }]) {
       let cursor = null;
       while (true) {
         let query = db.collection(collection).where('merchantEligibility.status', '==', 'verified').orderBy('__name__').limit(100);

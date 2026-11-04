@@ -1,5 +1,5 @@
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
-const TYPES = ['restaurant', 'grocery'];
+const TYPES = ['restaurant', 'home_kitchen', 'grocery', 'handmade'];
 const STAFF_PERMISSIONS = ['orders', 'catalog', 'business', 'settlements'];
 
 function merchantStaffGrant(account, id, type) {
@@ -19,10 +19,17 @@ function normalizeMerchantBusinessIds(value = {}) {
   return result;
 }
 
+function businessCollection(type) {
+  if (type === 'restaurant') return 'restaurants';
+  if (type === 'grocery') return 'grocery_stores';
+  if (type === 'home_kitchen' || type === 'handmade') return 'merchant_businesses';
+  return null;
+}
+
 function merchantHasBusiness(account, id, type) {
   if (!account || account.role !== 'merchant' || account.disabled === true || account.suspended === true || !TYPES.includes(type) || typeof id !== 'string' || !ID.test(id)) return false;
   if (account.merchantId === id && account.merchantType === type) return true;
-  try { return normalizeMerchantBusinessIds(account.merchantBusinessIds)[type].includes(id) || Boolean(merchantStaffGrant(account, id, type)); }
+  try { return normalizeMerchantBusinessIds(account.merchantBusinessIds)[type].includes(id) || account.merchantBusinessAssignments?.[id]?.vertical === type || Boolean(merchantStaffGrant(account, id, type)); }
   catch { return false; }
 }
 
@@ -30,7 +37,10 @@ function merchantHasPermission(account, id, type, permission) {
   if (!STAFF_PERMISSIONS.includes(permission) || !merchantHasBusiness(account, id, type)) return false;
   const grant = merchantStaffGrant(account, id, type);
   // Existing assigned merchant accounts retain their current business-owner access.
-  return grant ? grant.permissions.includes(permission) : true;
+  if (grant) return grant.permissions.includes(permission);
+  const assignment = account?.merchantBusinessAssignments?.[id];
+  if (assignment) return Array.isArray(assignment.permissions) && assignment.permissions.includes(permission);
+  return true;
 }
 
 function addMerchantBusiness(account, id, type) {
@@ -46,7 +56,8 @@ function merchantBusinessOutlets(account) {
   const businesses = normalizeMerchantBusinessIds(account?.merchantBusinessIds);
   for (const type of TYPES) if (account?.merchantType === type && typeof account.merchantId === 'string' && ID.test(account.merchantId) && !businesses[type].includes(account.merchantId)) businesses[type].push(account.merchantId);
   for (const [id, grant] of Object.entries(account?.merchantStaffAccess || {})) if (ID.test(id) && TYPES.includes(grant?.merchantType) && merchantStaffGrant(account, id, grant.merchantType) && !businesses[grant.merchantType].includes(id)) businesses[grant.merchantType].push(id);
+  for (const [id, assignment] of Object.entries(account?.merchantBusinessAssignments || {})) if (ID.test(id) && TYPES.includes(assignment?.vertical) && Array.isArray(assignment.permissions) && !businesses[assignment.vertical].includes(id)) businesses[assignment.vertical].push(id);
   return TYPES.flatMap(merchantType => businesses[merchantType].map(merchantId => ({ merchantId, merchantType })));
 }
 
-module.exports = { STAFF_PERMISSIONS, normalizeMerchantBusinessIds, merchantHasBusiness, merchantHasPermission, merchantStaffGrant, addMerchantBusiness, merchantBusinessOutlets };
+module.exports = { STAFF_PERMISSIONS, TYPES, businessCollection, normalizeMerchantBusinessIds, merchantHasBusiness, merchantHasPermission, merchantStaffGrant, addMerchantBusiness, merchantBusinessOutlets };

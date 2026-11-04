@@ -8,15 +8,15 @@ function merchantSettlementPolicy(input, merchantId, serviceType, { requireAccep
   if (!input || input.merchantId !== merchantId || input.serviceType !== serviceType || !Number.isSafeInteger(input.version) || input.version < 1 || requireAccepted && (typeof input.acceptedBy !== 'string' || !input.acceptedBy) || typeof input.agreementReference !== 'string' || !input.agreementReference) {
     throw new Error('This order has no matching, versioned merchant settlement agreement.');
   }
-  if (!['food', 'grocery'].includes(serviceType) || !Number.isSafeInteger(input.commissionBps) || input.commissionBps < 0 || input.commissionBps > 10000) {
+  if (!['food', 'grocery', 'homemade_food', 'handmade'].includes(serviceType) || !Number.isSafeInteger(input.commissionBps) || input.commissionBps < 0 || input.commissionBps > 10000) {
     throw new Error('The merchant commission agreement needs operations review.');
   }
   return { merchantId, serviceType, version: input.version, commissionBps: input.commissionBps, ...(input.acceptedBy ? { acceptedBy: input.acceptedBy } : {}), agreementReference: input.agreementReference };
 }
 
 function calculateMerchantSettlement(booking) {
-  if (!booking || !['completed', 'delivered'].includes(booking.status) || !booking.merchantId || !['food', 'grocery'].includes(booking.serviceType)) {
-    throw new Error('Only completed food and grocery orders can be settled to a merchant.');
+  if (!booking || !['completed', 'delivered'].includes(booking.status) || !booking.merchantId || !['food', 'grocery', 'homemade_food', 'handmade'].includes(booking.serviceType)) {
+    throw new Error('Only completed commerce orders can be settled to a merchant.');
   }
   const policy = merchantSettlementPolicy(booking.merchantSettlementContract, booking.merchantId, booking.serviceType);
   const breakdown = booking.priceBreakdown;

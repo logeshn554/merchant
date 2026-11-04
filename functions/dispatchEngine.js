@@ -12,7 +12,7 @@ function isBookingDispatchable(booking, now = Date.now()) {
   if (booking.exception?.status === 'open') return false;
   if (!['paid', 'pending_cod'].includes(booking.paymentStatus)) return false;
 
-  const isMerchantOrder = ['food', 'grocery'].includes(booking.serviceType);
+  const isMerchantOrder = ['food', 'grocery', 'homemade_food', 'handmade'].includes(booking.serviceType);
   const correctStage = isMerchantOrder ? booking.status === 'ready' : booking.status === 'pending';
   if (!correctStage) return false;
 

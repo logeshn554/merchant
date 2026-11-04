@@ -47,7 +47,7 @@ service cloud.firestore {
     function canReceiveBooking(data) {
       let driver = get(/databases/$(database)/documents/driver_profiles/$(request.auth.uid)).data;
       return isVerifiedOnlineDriver() && data.driverId == null && data.serviceType in driver.get('supportedServices', [])
-        && ((data.serviceType in ['food', 'grocery'] && data.status == 'ready') || (!(data.serviceType in ['food', 'grocery']) && data.status == 'pending'))
+        && ((data.serviceType in ['food', 'grocery', 'homemade_food', 'handmade'] && data.status == 'ready') || (!(data.serviceType in ['food', 'grocery', 'homemade_food', 'handmade']) && data.status == 'pending'))
         && (data.serviceType != 'ride' || data.details.vehicleType == driver.vehicleType);
     }
 
@@ -67,12 +67,16 @@ service cloud.firestore {
     function merchantOutlet(account, merchantId, businessType) {
       return account.get('merchantId', '') == merchantId && account.get('merchantType', '') == businessType
         || account.get('merchantBusinessIds', {}).get(businessType, []).hasAny([merchantId])
-        || account.get('merchantStaffAccess', {}).get(merchantId, {}).get('merchantType', '') == businessType;
+        || account.get('merchantStaffAccess', {}).get(merchantId, {}).get('merchantType', '') == businessType
+        || account.get('merchantBusinessAssignments', {}).get(merchantId, {}).get('vertical', '') == businessType;
     }
     function merchantPermission(account, merchantId, businessType, permission) {
-      return merchantOutlet(account, merchantId, businessType)
-        && (!account.get('merchantStaffAccess', {}).keys().hasAny([merchantId])
-          || account.get('merchantStaffAccess', {}).get(merchantId, {}).get('permissions', []).hasAny([permission]));
+      return merchantOutlet(account, merchantId, businessType) && (
+        account.get('merchantStaffAccess', {}).keys().hasAny([merchantId])
+          ? account.get('merchantStaffAccess', {}).get(merchantId, {}).get('permissions', []).hasAny([permission])
+          : account.get('merchantBusinessAssignments', {}).keys().hasAny([merchantId])
+            ? account.get('merchantBusinessAssignments', {}).get(merchantId, {}).get('permissions', []).hasAny([permission])
+            : true);
     }
     function merchantOutletFor(merchantId, businessType) {
       return merchantOutlet(request.auth.token, merchantId, businessType)
@@ -82,14 +86,18 @@ service cloud.firestore {
       return merchantPermission(request.auth.token, merchantId, businessType, permission)
         || merchantPermission(get(/databases/$(database)/documents/users/$(request.auth.uid)).data, merchantId, businessType, permission);
     }
+    function isMerchantAccount() {
+      return isSignedIn() && (request.auth.token.get('role', '') == 'merchant'
+        || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'merchant');
+    }
     function merchantPermissionFor(data, permission) {
-      let businessType = data.get('serviceType', '') == 'food' ? 'restaurant' : data.get('serviceType', '') == 'grocery' ? 'grocery' : '';
+      let businessType = data.get('sellerVertical', '') != '' ? data.get('sellerVertical', '') : data.get('serviceType', '') == 'food' ? 'restaurant' : data.get('serviceType', '') == 'grocery' ? 'grocery' : '';
       return businessType != '' && merchantPermissionCheck(data.get('merchantId', ''), businessType, permission);
     }
     function isMerchantFor(data) {
-      let businessType = data.get('serviceType', '') == 'food' ? 'restaurant' : data.get('serviceType', '') == 'grocery' ? 'grocery' : '';
+      let businessType = data.get('sellerVertical', '') != '' ? data.get('sellerVertical', '') : data.get('serviceType', '') == 'food' ? 'restaurant' : data.get('serviceType', '') == 'grocery' ? 'grocery' : '';
       let merchantId = data.get('merchantId', '');
-      return isSignedIn() && request.auth.token.get('role', '') == 'merchant' && businessType != '' && merchantId != ''
+      return isMerchantAccount() && businessType != '' && merchantId != ''
         && merchantPermissionCheck(merchantId, businessType, 'orders');
     }
 
@@ -119,9 +127,9 @@ service cloud.firestore {
     }
 
     function isMerchantForLeg(data) {
-      let businessType = data.get('type', '') == 'food' ? 'restaurant' : data.get('type', '') == 'grocery' ? 'grocery' : '';
+      let businessType = data.get('sellerVertical', '') != '' ? data.get('sellerVertical', '') : data.get('type', '') == 'food' ? 'restaurant' : data.get('type', '') == 'grocery' ? 'grocery' : '';
       let merchantId = data.get('merchantId', '');
-      return isSignedIn() && request.auth.token.get('role', '') == 'merchant' && businessType != '' && merchantId != ''
+      return isMerchantAccount() && businessType != '' && merchantId != ''
         && merchantPermissionCheck(merchantId, businessType, 'orders');
     }
 
@@ -152,11 +160,14 @@ service cloud.firestore {
 
     function isValidUser(data) {
       return data.keys().hasAll(['uid', 'name', 'email', 'role']) 
-        && data.keys().hasOnly(['uid', 'name', 'email', 'phone', 'phoneVerified', 'requestedRole', 'role', 'createdAt', 'walletBalance', 'photoURL', 'defaultAddressId', 'defaultAddress', 'preferences', 'favorites', 'merchantId', 'merchantType', 'merchantBusinessIds', 'merchantStaffAccess', 'transportOperatorId', 'accountAuthority', 'neonAccountId'])
+        && data.keys().hasOnly(['uid', 'name', 'email', 'phone', 'phoneVerified', 'requestedRole', 'role', 'createdAt', 'walletBalance', 'photoURL', 'defaultAddressId', 'defaultAddress', 'preferences', 'favorites', 'merchantId', 'merchantType', 'merchantBusinessIds', 'merchantBusinessAssignments', 'merchantStaffAccess', 'transportOperatorId', 'accountAuthority', 'neonAccountId'])
         && (!data.keys().hasAny(['merchantBusinessIds']) || (data.merchantBusinessIds is map
-          && data.merchantBusinessIds.keys().hasOnly(['restaurant', 'grocery'])
+          && data.merchantBusinessIds.keys().hasOnly(['restaurant', 'home_kitchen', 'grocery', 'handmade'])
           && (!data.merchantBusinessIds.keys().hasAny(['restaurant']) || data.merchantBusinessIds.restaurant is list && data.merchantBusinessIds.restaurant.size() <= 25)
-          && (!data.merchantBusinessIds.keys().hasAny(['grocery']) || data.merchantBusinessIds.grocery is list && data.merchantBusinessIds.grocery.size() <= 25)))
+          && (!data.merchantBusinessIds.keys().hasAny(['home_kitchen']) || data.merchantBusinessIds.home_kitchen is list && data.merchantBusinessIds.home_kitchen.size() <= 25)
+          && (!data.merchantBusinessIds.keys().hasAny(['grocery']) || data.merchantBusinessIds.grocery is list && data.merchantBusinessIds.grocery.size() <= 25)
+          && (!data.merchantBusinessIds.keys().hasAny(['handmade']) || data.merchantBusinessIds.handmade is list && data.merchantBusinessIds.handmade.size() <= 25)))
+        && (!data.keys().hasAny(['merchantBusinessAssignments']) || (data.merchantBusinessAssignments is map && data.merchantBusinessAssignments.size() <= 25))
         && (!data.keys().hasAny(['merchantStaffAccess']) || (data.merchantStaffAccess is map && data.merchantStaffAccess.size() <= 25))
         && (!data.keys().hasAny(['favorites']) || (data.favorites is list && data.favorites.size() <= 200))
         && data.uid == request.auth.uid
@@ -198,11 +209,11 @@ service cloud.firestore {
 
     function isValidBooking(data) {
       return data.keys().hasAll(['bookingId', 'customerId', 'customerName', 'serviceType', 'status', 'price'])
-        && data.keys().hasOnly(['bookingId', 'customerId', 'customerName', 'serviceType', 'status', 'price', 'createdAt', 'updatedAt', 'pickupAddress', 'dropAddress', 'driverId', 'driverName', 'otp', 'paymentStatus', 'paymentMethod', 'paymentOrderId', 'paymentId', 'details', 'driverPayout'])
+        && data.keys().hasOnly(['bookingId', 'customerId', 'customerName', 'serviceType', 'sellerVertical', 'orderType', 'fulfillmentMethod', 'deliveryProvider', 'status', 'price', 'createdAt', 'updatedAt', 'pickupAddress', 'dropAddress', 'driverId', 'driverName', 'otp', 'paymentStatus', 'paymentMethod', 'paymentOrderId', 'paymentId', 'details', 'driverPayout'])
         && data.bookingId is string && data.bookingId.size() <= 100
         && data.customerId == request.auth.uid
         && data.customerName is string && data.customerName.size() <= 100
-        && (data.serviceType == 'food' || data.serviceType == 'grocery' || data.serviceType == 'ride' || data.serviceType == 'parcel' || data.serviceType == 'takeover' || data.serviceType == 'transport')
+        && (data.serviceType == 'food' || data.serviceType == 'grocery' || data.serviceType == 'homemade_food' || data.serviceType == 'handmade' || data.serviceType == 'ride' || data.serviceType == 'parcel' || data.serviceType == 'takeover' || data.serviceType == 'transport')
         && (data.status == 'pending' || data.status == 'accepted' || data.status == 'preparing' || data.status == 'ready' || data.status == 'transit' || data.status == 'delivered' || data.status == 'completed' || data.status == 'cancelled')
         && (data.price is int || data.price is float)
         && (!data.keys().hasAny(['pickupAddress']) || (data.pickupAddress is string && data.pickupAddress.size() <= 300))
@@ -242,6 +253,7 @@ service cloud.firestore {
         incoming().get('merchantId', null) == existing().get('merchantId', null) &&
         incoming().get('merchantType', null) == existing().get('merchantType', null) &&
         incoming().get('merchantBusinessIds', null) == existing().get('merchantBusinessIds', null) &&
+        incoming().get('merchantBusinessAssignments', null) == existing().get('merchantBusinessAssignments', null) &&
         incoming().get('merchantStaffAccess', null) == existing().get('merchantStaffAccess', null) &&
         incoming().get('transportOperatorId', null) == existing().get('transportOperatorId', null) &&
         incoming().get('phoneVerified', false) == existing().get('phoneVerified', false) &&
@@ -411,6 +423,20 @@ service cloud.firestore {
           allow read: if isSignedIn() && (isAdmin() || merchantPermissionCheck(storeId, 'grocery', 'catalog'));
           allow write: if false;
         }
+      }
+    }
+
+    // New seller aggregate. All writes are server-owned; only approved, published
+    // catalog items are publicly readable.
+    match /merchant_businesses/{businessId} {
+      allow read: if true;
+      allow write: if false;
+
+      match /catalog_items/{itemId} {
+        allow read: if resource.data.get('publicationStatus', '') == 'published'
+          && get(/databases/$(database)/documents/merchant_businesses/$(businessId)).data.get('onboardingStatus', '') == 'approved'
+          && get(/databases/$(database)/documents/merchant_businesses/$(businessId)).data.get('merchantEligibility', {}).get('status', '') == 'verified';
+        allow write: if false;
       }
     }
 

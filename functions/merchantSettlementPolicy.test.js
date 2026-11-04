@@ -29,6 +29,14 @@ test('merchant settlement fails closed on missing, mismatched, malformed or unre
   assert.throws(() => calculateMerchantSettlement(booking({ priceBreakdown: { ...booking().priceBreakdown, totalCents: 9 } })));
   assert.throws(() => calculateMerchantSettlement(booking({ price: 99 })));
 });
+test('home-kitchen and handmade settlements use the same versioned commission contract', () => {
+  const record = calculateMerchantSettlement(booking({
+    serviceType: 'handmade', merchantId: 'maker_1',
+    merchantSettlementContract: { merchantId: 'maker_1', serviceType: 'handmade', version: 1, commissionBps: 1000, acceptedBy: 'owner1', agreementReference: 'AGREEMENT-2' }
+  }));
+  assert.equal(record.commissionBps, 1000);
+  assert.equal(record.payableCents, 9945);
+});
 
 test('a pending agreement is valid only for the explicit owner-acceptance transition', () => {
   const pending = { merchantId: 'store1', serviceType: 'grocery', version: 3, commissionBps: 1200, agreementReference: 'AGREEMENT-1' };

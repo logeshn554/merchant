@@ -5,7 +5,7 @@ function canStartApplication(application) {
   return !application || ['rejected', 'withdrawn', 'approved'].includes(application.status);
 }
 function partnerApplicationFunctions({ onCall, db, REGION, HttpsError, documentId, cleanText }) {
-  const kinds = ['driver', 'restaurant', 'grocery', 'transport'];
+  const kinds = ['driver', 'restaurant', 'home_kitchen', 'grocery', 'handmade', 'transport'];
   const fields = data => {
     if (!kinds.includes(data.type) || data.consent !== true) throw new HttpsError('invalid-argument', 'Choose a partner type and consent to application review.');
     const phone = cleanText(data.phone, 'Contact phone', 16);

@@ -3,7 +3,7 @@ const { merchantHasPermission, merchantBusinessOutlets } = require('./merchantAc
 const { notificationId, claimNotification, bookingNotificationContent } = require('./notificationPolicy');
 
 const active = account => account && account.disabled !== true && account.suspended !== true;
-const merchantFor = (account, booking) => active(account) && merchantHasPermission(account, booking.merchantId, booking.serviceType === 'food' ? 'restaurant' : booking.serviceType === 'grocery' ? 'grocery' : null, 'orders');
+const merchantFor = (account, booking) => active(account) && merchantHasPermission(account, booking.merchantId, booking.sellerVertical || (booking.serviceType === 'food' ? 'restaurant' : booking.serviceType === 'grocery' ? 'grocery' : null), 'orders');
 
 function bookingNotificationFunctions({ onCall, onDocumentWritten, db, REGION, databaseId, Timestamp, HttpsError, requireUser, cleanText, messaging, isOfferEligible }) {
   const deviceRef = token => db.doc(`push_devices/${crypto.createHash('sha256').update(token).digest('hex')}`);
@@ -41,7 +41,7 @@ function bookingNotificationFunctions({ onCall, onDocumentWritten, db, REGION, d
       const [account, driver] = await Promise.all([db.doc(`users/${booking.driverId}`).get(), db.doc(`driver_profiles/${booking.driverId}`).get()]);
       if (active(account.data()) && account.data()?.role === 'driver' && driver.data()?.status === 'verified') add(booking.driverId, 'driver');
     }
-    const dispatchable = !booking.driverId && booking.exception?.status !== 'open' && ['paid', 'pending_cod'].includes(booking.paymentStatus) && (['food', 'grocery'].includes(booking.serviceType) ? booking.status === 'ready' : booking.status === 'pending');
+    const dispatchable = !booking.driverId && booking.exception?.status !== 'open' && ['paid', 'pending_cod'].includes(booking.paymentStatus) && (['food', 'grocery', 'homemade_food', 'handmade'].includes(booking.serviceType) ? booking.status === 'ready' : booking.status === 'pending');
     if (dispatchable && typeof booking.details?.pickupZoneId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(booking.details.pickupZoneId)) {
       const zone = (await db.doc(`service_zones/${booking.details.pickupZoneId}`).get()).data();
       if (zone?.enabled === true && zone.serviceTypes?.includes(booking.serviceType)) {
@@ -64,14 +64,15 @@ function bookingNotificationFunctions({ onCall, onDocumentWritten, db, REGION, d
         }
       }
     }
-    if (typeof booking.merchantId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(booking.merchantId) && ['food', 'grocery'].includes(booking.serviceType)) {
-      const field = booking.serviceType === 'food' ? 'restaurant' : 'grocery';
+    if (typeof booking.merchantId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(booking.merchantId) && (['food', 'grocery'].includes(booking.serviceType) || ['home_kitchen', 'handmade'].includes(booking.sellerVertical))) {
+      const field = booking.sellerVertical || (booking.serviceType === 'food' ? 'restaurant' : 'grocery');
       const [primary, additional, staff] = await Promise.all([
         db.collection('users').where('merchantId', '==', booking.merchantId).get(),
         db.collection('users').where(`merchantBusinessIds.${field}`, 'array-contains', booking.merchantId).get(),
-        db.collection('users').where(`merchantStaffAccess.${booking.merchantId}.merchantType`, '==', field === 'restaurant' ? 'restaurant' : 'grocery').get(),
+        db.collection('users').where(`merchantStaffAccess.${booking.merchantId}.merchantType`, '==', field).get(),
       ]);
-      for (const merchant of [...new Map([...primary.docs, ...additional.docs, ...staff.docs].map(record => [record.id, record])).values()]) if (merchantFor(merchant.data(), booking)) add(merchant.id, 'merchant');
+      const assignments = await db.collection('users').where(`merchantBusinessAssignments.${booking.merchantId}.vertical`, '==', field).get();
+      for (const merchant of [...new Map([...primary.docs, ...additional.docs, ...staff.docs, ...assignments.docs].map(record => [record.id, record])).values()]) if (merchantFor(merchant.data(), booking)) add(merchant.id, 'merchant');
     }
     const content = bookingNotificationContent(changed, previous);
     for (const [uid, audiences] of recipients) {
@@ -84,7 +85,7 @@ function bookingNotificationFunctions({ onCall, onDocumentWritten, db, REGION, d
       const dispatchOffer = audiences.has('dispatch') && !booking.driverId;
       const message = dispatchOffer
         ? { type: 'dispatch_offer', title: 'Delivery request available', body: 'A nearby delivery request is available. Open AllGo to review it.' }
-        : audiences.has('merchant') && changed.status === 'completed' && ['food', 'grocery'].includes(changed.serviceType)
+        : audiences.has('merchant') && changed.status === 'completed' && ['food', 'grocery', 'homemade_food', 'handmade'].includes(changed.serviceType)
           ? { type: 'merchant_order_completed', title: 'Order completed', body: `Order ${bookingId} completed. Check Earnings for any applicable settlement record.` }
           : content;
       const id = notificationId(event.id, uid), historyRef = db.doc(`user_notifications/${uid}/items/${id}`);

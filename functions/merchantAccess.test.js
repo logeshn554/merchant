@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeMerchantBusinessIds, merchantHasBusiness, merchantHasPermission, merchantBusinessOutlets, addMerchantBusiness } = require('./merchantAccess');
+const { normalizeMerchantBusinessIds, merchantHasBusiness, merchantHasPermission, merchantBusinessOutlets, addMerchantBusiness, businessCollection } = require('./merchantAccess');
 
 test('merchant outlet membership is type scoped and rejects inactive accounts', () => {
   const account = { role: 'merchant', merchantId: 'main', merchantType: 'restaurant', merchantBusinessIds: { restaurant: ['branch'], grocery: ['market'] } };
@@ -32,4 +32,14 @@ test('staff grants are constrained to one outlet and explicit work permissions',
   assert.deepEqual(merchantBusinessOutlets(staff), [{ merchantId: 'branch', merchantType: 'restaurant' }]);
   const malformed = { role: 'merchant', merchantStaffAccess: { branch: { merchantType: 'restaurant', ownerUid: 'owner', permissions: ['orders', 'orders'] } } };
   assert.equal(merchantHasPermission(malformed, 'branch', 'restaurant', 'orders'), false);
+});
+
+test('new seller assignments are isolated from legacy collections and remain permission scoped', () => {
+  const account = { role: 'merchant', merchantBusinessAssignments: { maker_1: { vertical: 'handmade', permissions: ['catalog', 'orders'] } } };
+  assert.equal(businessCollection('handmade'), 'merchant_businesses');
+  assert.equal(businessCollection('home_kitchen'), 'merchant_businesses');
+  assert.equal(merchantHasBusiness(account, 'maker_1', 'handmade'), true);
+  assert.equal(merchantHasBusiness(account, 'maker_1', 'grocery'), false);
+  assert.equal(merchantHasPermission(account, 'maker_1', 'handmade', 'catalog'), true);
+  assert.equal(merchantHasPermission(account, 'maker_1', 'handmade', 'orders'), true);
 });

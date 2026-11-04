@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { contractFor, driverTransition, merchantTransition, requireMerchantReady, requireMerchantPickup } = require('./fulfillmentPolicy');
+const { contractFor, driverTransition, merchantTransition, requireMerchantReady, requireMerchantPickup, orderContract } = require('./fulfillmentPolicy');
 test('service transitions enforce pickup, trip start, destination arrival and completion order', () => {
   for (const service of ['food', 'grocery', 'ride', 'takeover', 'parcel', 'transport']) {
     assert.throws(() => driverTransition(service, 'accepted', 'transit'));
@@ -36,4 +36,13 @@ test('food and grocery drivers wait for a merchant pickup handoff event', () => 
     assert.doesNotThrow(() => requireMerchantPickup(service, true));
   }
   assert.doesNotThrow(() => requireMerchantPickup('parcel', false));
+});
+test('new order contracts separate order type, fulfillment method and delivery provider', () => {
+  assert.deepEqual(orderContract('made_to_order', 'third_party_shipping', 'third_party'), {
+    orderType: 'made_to_order', fulfillmentMethod: 'third_party_shipping', deliveryProvider: 'third_party', productionStage: 'production', readyStage: 'packed'
+  });
+  assert.deepEqual(orderContract('physical_product', 'customer_pickup', 'none').readyStage, 'packed');
+  assert.throws(() => orderContract('physical_product', 'customer_pickup', 'allgo'), /cannot use/);
+  assert.throws(() => orderContract('physical_product', 'third_party_shipping', 'none'), /needs a provider/);
+  assert.throws(() => orderContract('parcel', 'platform_delivery', 'allgo'), /contract is invalid/);
 });

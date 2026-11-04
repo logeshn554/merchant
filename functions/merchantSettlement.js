@@ -1,9 +1,10 @@
-const { merchantHasBusiness } = require('./merchantAccess');
+const { merchantHasBusiness, TYPES, businessCollection } = require('./merchantAccess');
 const { merchantSettlementPolicy, addCents: policyAddCents } = require('./merchantSettlementPolicy');
 const { journal: defaultJournal } = require('./journalPolicy');
 const { addCents: defaultAddCents } = require('./moneyPolicy');
 
 function merchantSettlementFunctions({ onCall, db, REGION, HttpsError, documentId, cleanText, Timestamp, journal = defaultJournal, addCents = defaultAddCents }) {
+  const serviceFor = type => ({ restaurant: 'food', home_kitchen: 'homemade_food', grocery: 'grocery', handmade: 'handmade' }[type]);
   const caller = async request => {
     const uid = request.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', 'Sign in to manage merchant settlement terms.');
@@ -14,11 +15,11 @@ function merchantSettlementFunctions({ onCall, db, REGION, HttpsError, documentI
   return {
     getMerchantSettlementAgreement: onCall({ operation: 'getMerchantSettlementAgreement', region: REGION }, async request => {
       const { uid, account } = await caller(request), merchantId = documentId(request.data?.merchantId, 'Business ID'), merchantType = request.data?.merchantType;
-      if (!['restaurant', 'grocery'].includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) throw new HttpsError('permission-denied', 'This business is not assigned to your account.');
+      if (!TYPES.includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) throw new HttpsError('permission-denied', 'This business is not assigned to your account.');
       const ref = db.doc(`merchant_settlement_contracts/${merchantId}`), snapshot = await ref.get(), agreement = snapshot.data();
-      const business = (await db.doc(`${merchantType === 'restaurant' ? 'restaurants' : 'grocery_stores'}/${merchantId}`).get()).data();
+      const business = (await db.doc(`${businessCollection(merchantType)}/${merchantId}`).get()).data();
       if (!business || business.ownerId !== uid) throw new HttpsError('permission-denied', 'Only the verified business owner can review this settlement agreement.');
-      if (!agreement || agreement.serviceType !== (merchantType === 'restaurant' ? 'food' : 'grocery')) return { status: 'not_configured', version: 0 };
+      if (!agreement || agreement.serviceType !== serviceFor(merchantType)) return { status: 'not_configured', version: 0 };
       return {
         status: agreement.status,
         version: agreement.version,
@@ -31,10 +32,10 @@ function merchantSettlementFunctions({ onCall, db, REGION, HttpsError, documentI
     acceptMerchantSettlementAgreement: onCall({ operation: 'acceptMerchantSettlementAgreement', region: REGION }, async request => {
       const { uid, account } = await caller(request), data = request.data || {};
       const merchantId = documentId(data.merchantId, 'Business ID'), merchantType = data.merchantType, requestId = documentId(data.requestId, 'Request ID');
-      if (!['restaurant', 'grocery'].includes(merchantType) || !Number.isSafeInteger(data.expectedVersion) || data.expectedVersion < 1 || data.accepted !== true || !merchantHasBusiness(account, merchantId, merchantType)) throw new HttpsError('invalid-argument', 'Review the current agreement and confirm acceptance.');
-      const serviceType = merchantType === 'restaurant' ? 'food' : 'grocery';
+      if (!TYPES.includes(merchantType) || !Number.isSafeInteger(data.expectedVersion) || data.expectedVersion < 1 || data.accepted !== true || !merchantHasBusiness(account, merchantId, merchantType)) throw new HttpsError('invalid-argument', 'Review the current agreement and confirm acceptance.');
+      const serviceType = serviceFor(merchantType);
       return db.runTransaction(async tx => {
-        const agreementRef = db.doc(`merchant_settlement_contracts/${merchantId}`), businessRef = db.doc(`${merchantType === 'restaurant' ? 'restaurants' : 'grocery_stores'}/${merchantId}`), eventRef = agreementRef.collection('events').doc(requestId);
+        const agreementRef = db.doc(`merchant_settlement_contracts/${merchantId}`), businessRef = db.doc(`${businessCollection(merchantType)}/${merchantId}`), eventRef = agreementRef.collection('events').doc(requestId);
         const [agreementSnap, businessSnap, eventSnap, accountSnap] = await Promise.all([tx.get(agreementRef), tx.get(businessRef), tx.get(eventRef), tx.get(db.doc(`users/${uid}`))]);
         const agreement = agreementSnap.data(), business = businessSnap.data();
         if (eventSnap.exists) {
@@ -57,8 +58,8 @@ function merchantSettlementFunctions({ onCall, db, REGION, HttpsError, documentI
       if (!uid || request.auth.token.admin !== true || (await db.doc(`users/${uid}`).get()).data()?.role !== 'admin') throw new HttpsError('permission-denied', 'Verified operations access is required.');
       const merchantId = documentId(data.merchantId, 'Business ID'), merchantType = data.merchantType, expectedVersion = data.expectedVersion;
       const reason = cleanText(data.reason, 'Agreement review reason', 500), agreementReference = cleanText(data.agreementReference, 'Executed agreement reference', 200);
-      if (!['restaurant', 'grocery'].includes(merchantType) || !Number.isSafeInteger(data.commissionBps) || data.commissionBps < 0 || data.commissionBps > 10000 || !Number.isSafeInteger(expectedVersion) || expectedVersion < 0 || data.reviewed !== true) throw new HttpsError('invalid-argument', 'Review the executed agreement, business type, commission and current revision.');
-      const serviceType = merchantType === 'restaurant' ? 'food' : 'grocery', businessRef = db.doc(`${merchantType === 'restaurant' ? 'restaurants' : 'grocery_stores'}/${merchantId}`), agreementRef = db.doc(`merchant_settlement_contracts/${merchantId}`);
+      if (!TYPES.includes(merchantType) || !Number.isSafeInteger(data.commissionBps) || data.commissionBps < 0 || data.commissionBps > 10000 || !Number.isSafeInteger(expectedVersion) || expectedVersion < 0 || data.reviewed !== true) throw new HttpsError('invalid-argument', 'Review the executed agreement, business type, commission and current revision.');
+      const serviceType = serviceFor(merchantType), businessRef = db.doc(`${businessCollection(merchantType)}/${merchantId}`), agreementRef = db.doc(`merchant_settlement_contracts/${merchantId}`);
       const business = (await businessRef.get()).data();
       if (!business || business.merchantEligibility?.status !== 'verified' || business.onboardingStatus !== 'approved' || typeof business.ownerId !== 'string') throw new HttpsError('failed-precondition', 'Only independently verified businesses can receive settlement terms.');
       const now = Timestamp.now();
@@ -76,7 +77,7 @@ function merchantSettlementFunctions({ onCall, db, REGION, HttpsError, documentI
     setMerchantPayoutAccount: onCall({ operation: 'setMerchantPayoutAccount', region: REGION }, async request => {
       const { uid, account } = await caller(request), data = request.data || {};
       const merchantId = documentId(data.merchantId, 'Business ID'), merchantType = data.merchantType;
-      if (!['restaurant', 'grocery'].includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
+      if (!TYPES.includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
         throw new HttpsError('permission-denied', 'This business is not assigned to your account.');
       }
 
@@ -150,7 +151,7 @@ function merchantSettlementFunctions({ onCall, db, REGION, HttpsError, documentI
     getMerchantPayoutAccount: onCall({ operation: 'getMerchantPayoutAccount', region: REGION }, async request => {
       const { uid, account } = await caller(request), data = request.data || {};
       const merchantId = documentId(data.merchantId, 'Business ID'), merchantType = data.merchantType;
-      if (!['restaurant', 'grocery'].includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
+      if (!TYPES.includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
         throw new HttpsError('permission-denied', 'This business is not assigned to your account.');
       }
 
@@ -172,7 +173,7 @@ function merchantSettlementFunctions({ onCall, db, REGION, HttpsError, documentI
     setMerchantTaxCompliance: onCall({ operation: 'setMerchantTaxCompliance', region: REGION }, async request => {
       const { uid, account } = await caller(request), data = request.data || {};
       const merchantId = documentId(data.merchantId, 'Business ID'), merchantType = data.merchantType;
-      if (!['restaurant', 'grocery'].includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
+      if (!TYPES.includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
         throw new HttpsError('permission-denied', 'This business is not assigned to your account.');
       }
 
@@ -205,7 +206,7 @@ function merchantSettlementFunctions({ onCall, db, REGION, HttpsError, documentI
         updatedBy: uid
       }, { merge: true });
 
-      const businessRef = db.doc(`${merchantType === 'restaurant' ? 'restaurants' : 'grocery_stores'}/${merchantId}`);
+      const businessRef = db.doc(`${businessCollection(merchantType)}/${merchantId}`);
       await businessRef.set({
         ...(gstin ? { gstin } : {}),
         ...(fssaiNumber ? { fssaiNumber } : {})
@@ -220,13 +221,13 @@ function merchantSettlementFunctions({ onCall, db, REGION, HttpsError, documentI
     getMerchantTaxCompliance: onCall({ operation: 'getMerchantTaxCompliance', region: REGION }, async request => {
       const { uid, account } = await caller(request), data = request.data || {};
       const merchantId = documentId(data.merchantId, 'Business ID'), merchantType = data.merchantType;
-      if (!['restaurant', 'grocery'].includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
+      if (!TYPES.includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
         throw new HttpsError('permission-denied', 'This business is not assigned to your account.');
       }
 
       const snap = await db.doc(`merchant_tax_compliance/${merchantId}`).get();
       if (!snap.exists) {
-        const bSnap = await db.doc(`${merchantType === 'restaurant' ? 'restaurants' : 'grocery_stores'}/${merchantId}`).get();
+        const bSnap = await db.doc(`${businessCollection(merchantType)}/${merchantId}`).get();
         const bData = bSnap.data() || {};
         return {
           gstin: bData.gstin || null,
@@ -244,13 +245,13 @@ function merchantSettlementFunctions({ onCall, db, REGION, HttpsError, documentI
     requestMerchantPayout: onCall({ operation: 'requestMerchantPayout', region: REGION }, async request => {
       const { uid, account } = await caller(request), data = request.data || {};
       const merchantId = documentId(data.merchantId, 'Business ID'), merchantType = data.merchantType, requestId = documentId(data.requestId, 'Request ID');
-      if (!['restaurant', 'grocery'].includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
+      if (!TYPES.includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
         throw new HttpsError('permission-denied', 'This business is not assigned to your account.');
       }
       const serviceType = merchantType === 'restaurant' ? 'food' : 'grocery';
       const payoutRef = db.doc(`payout_requests/merchant_${merchantId}_${requestId}`);
       const balanceRef = db.doc(`merchant_balances/${merchantId}`);
-      const businessRef = db.doc(`${merchantType === 'restaurant' ? 'restaurants' : 'grocery_stores'}/${merchantId}`);
+      const businessRef = db.doc(`${businessCollection(merchantType)}/${merchantId}`);
       const payoutAccountRef = db.doc(`merchant_payout_accounts/${merchantId}`);
       const agreementRef = db.doc(`merchant_settlement_contracts/${merchantId}`);
 
@@ -447,7 +448,7 @@ function merchantSettlementFunctions({ onCall, db, REGION, HttpsError, documentI
     getMerchantPayableBalance: onCall({ operation: 'getMerchantPayableBalance', region: REGION }, async request => {
       const { uid, account } = await caller(request), data = request.data || {};
       const merchantId = documentId(data.merchantId, 'Business ID'), merchantType = data.merchantType;
-      if (!['restaurant', 'grocery'].includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
+      if (!TYPES.includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
         throw new HttpsError('permission-denied', 'This business is not assigned to your account.');
       }
       const snap = await db.doc(`merchant_balances/${merchantId}`).get();
@@ -461,7 +462,7 @@ function merchantSettlementFunctions({ onCall, db, REGION, HttpsError, documentI
     getMerchantWeeklySettlements: onCall({ operation: 'getMerchantWeeklySettlements', region: REGION }, async request => {
       const { uid, account } = await caller(request), data = request.data || {};
       const merchantId = documentId(data.merchantId, 'Business ID'), merchantType = data.merchantType;
-      if (!['restaurant', 'grocery'].includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
+      if (!TYPES.includes(merchantType) || !merchantHasBusiness(account, merchantId, merchantType)) {
         throw new HttpsError('permission-denied', 'This business is not assigned to your account.');
       }
 
