@@ -1,0 +1,39 @@
+name: AllGo Merchant Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install web dependencies
+        run: npm ci
+      - name: Install Functions dependencies
+        run: npm ci --prefix functions
+      - name: TypeScript validation
+        run: npm run lint
+      - name: UI and Functions tests
+        run: npm test
+      - name: Firestore rules tests
+        run: node scripts/run-rules-tests.mjs
+      - name: Build and verify merchant audience
+        run: npm run build

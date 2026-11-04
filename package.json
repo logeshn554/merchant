@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3001 --host=0.0.0.0",
-    "build": "vite build",
+    "build": "vite build && npm run test:audience",
+    "test:audience": "node scripts/assert-merchant-build.mjs",
     "build:staging": "node scripts/check-release.mjs --environment=staging && vite build --mode staging",
     "build:production": "node scripts/check-release.mjs --environment=production && vite build --mode production",
     "preview": "vite preview",

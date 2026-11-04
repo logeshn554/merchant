@@ -4,12 +4,16 @@ import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
 import { contentSecurity } from './scripts/content-security.mjs';
 import firebaseConfig from './firebase-applet-config.json' with { type: 'json' };
+import { appAudience } from './src/app/audience.ts';
 
 export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   if (mode === 'demo' || env.VITE_DEMO_MODE === 'true' || process.env.VITE_DEMO_MODE === 'true') throw new Error('Demo mode is not supported by this production application.');
+  const audience = env.VITE_ALLGO_AUDIENCE || appAudience;
+  if (!['customer', 'merchant', 'driver'].includes(audience)) throw new Error(`Unsupported VITE_ALLGO_AUDIENCE: ${audience}`);
   const csp = contentSecurity({ apiUrl: env.VITE_ACCOUNT_API_URL, authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain, development: command === 'serve' });
   return {
+    define: { __ALLGO_AUDIENCE__: JSON.stringify(audience) },
     plugins: [react(), tailwindcss(), { name:'allgo-content-security', transformIndexHtml(html: string) { return html.replace('ALLGO_CONTENT_SECURITY_POLICY',csp); }, generateBundle() { this.emitFile({ type: 'asset', fileName: 'allgo-build.json', source: JSON.stringify({ mode, demo: false, projectId: env.VITE_FIREBASE_PROJECT_ID || null, databaseId: env.VITE_FIREBASE_DATABASE_ID || null }) }); } }],
     resolve: {
       // Keep Firebase's app singleton shared across firebase/app and Firestore.
