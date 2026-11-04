@@ -187,28 +187,6 @@ await pool.query("CREATE UNIQUE INDEX IF NOT EXISTS allgo_verified_phone_role_un
 await initOrdersSchema(pool);
 await seedCatalogIfEmpty(pool);
 
-// Seed sample accounts if allgo_accounts is completely empty (fresh Neon DB deployment)
-try {
-  const { rows: accCount } = await pool.query('SELECT COUNT(*) FROM allgo_accounts');
-  if (parseInt(accCount[0]?.count || '0', 10) === 0) {
-    console.log('Fresh Neon DB detected: seeding sample accounts for Alex, Rajesh, Vikram, Admin...');
-    const demoAccounts = [
-      { id: randomUUID(), email: 'customer@allgo.in', name: 'Alex Sharma', password: 'AllGo@123', profile: { role: 'customer', phone: '+919876543210', phoneVerified: true, approvalStatus: 'active', walletBalance: 500 } },
-      { id: randomUUID(), email: 'merchant@allgo.in', name: 'Chef Rajesh', password: 'AllGo@123', profile: { role: 'merchant', phone: '+919876543211', phoneVerified: true, approvalStatus: 'approved', merchantId: 'res_spice_symphony', merchantType: 'restaurant', restaurantName: 'Spice Symphony' } },
-      { id: randomUUID(), email: 'driver@allgo.in', name: 'Vikram Rao', password: 'AllGo@123', profile: { role: 'driver', phone: '+919876543212', phoneVerified: true, approvalStatus: 'approved', driver_status: 'approved', vehicle_no: 'KA-05-EV-8821', vehicleType: 'bike', online: true } },
-      { id: randomUUID(), email: 'admin@allgo.in', name: 'Master Administrator', password: 'AllGo@123', profile: { role: 'admin', phone: '+919876543219', phoneVerified: true, approvalStatus: 'active' } }
-    ];
-    for (const acc of demoAccounts) {
-      await pool.query(
-        'INSERT INTO allgo_accounts (id, email, name, password_hash, profile) VALUES ($1, $2, $3, $4, $5::jsonb) ON CONFLICT (email) DO NOTHING',
-        [acc.id, acc.email, acc.name, hashPassword(acc.password), JSON.stringify(acc.profile)]
-      );
-    }
-    console.log('Sample accounts seeded successfully in Neon DB.');
-  }
-} catch (seedErr) {
-  console.warn('Sample accounts check skipped:', seedErr.message);
-}
 
 const session = async (client, account) => {
   const token = randomBytes(32).toString('hex');
@@ -300,49 +278,14 @@ app.post('/api/auth/phone-login', route(async (req, res) => {
   const approvalStatus = initialApprovalStatus(role);
   let { rows } = await pool.query("SELECT * FROM allgo_accounts WHERE profile->>'phone'=$1 AND profile->>'role'=$2", [identity.phone, role]);
   if (!rows[0]) {
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      const defaultName = role === 'merchant' ? 'AllGo Merchant Partner' : role === 'driver' ? 'AllGo Delivery Partner' : 'AllGo Customer';
-      const insert = await client.query(
-        'INSERT INTO allgo_accounts (id, email, name, password_hash, profile) VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING *',
-        [
-          randomUUID(),
-          `${role}-${identity.phone.replace('+', '')}@allgo.in`,
-          defaultName,
-          dummyPassword,
-          JSON.stringify({
-            phone: identity.phone,
-            phoneVerified: true,
-            firebaseUid: identity.uid,
-            role,
-            approvalStatus: 'approved',
-            status: 'approved',
-            driver_status: 'approved',
-            merchantId: role === 'merchant' ? 'res-1' : undefined,
-            merchantType: role === 'merchant' ? 'restaurant' : undefined,
-            merchantBusinessIds: role === 'merchant' ? { restaurant: ['res-1'] } : undefined,
-            merchantStaffAccess: role === 'merchant' ? { 'res-1': { merchantType: 'restaurant', ownerUid: '12345678-0000-0000-0000-000123456789', permissions: ['orders', 'catalog', 'business'] } } : undefined,
-            transportOperatorId: role === 'driver' ? 'operator-1' : undefined
-          })
-        ]
-      );
-      rows = insert.rows;
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  } else {
-    if (!rows[0].profile?.firebaseUid && identity.uid) {
-      await pool.query("UPDATE allgo_accounts SET profile=profile || jsonb_build_object('firebaseUid', $2::text) WHERE id=$1", [rows[0].id, identity.uid]);
-    }
+    throw fail('No account found for this phone number. Please register first.', 404, 'auth/user-not-found');
+  }
+  if (!rows[0].profile?.firebaseUid && identity.uid) {
+    await pool.query("UPDATE allgo_accounts SET profile=profile || jsonb_build_object('firebaseUid', $2::text) WHERE id=$1", [rows[0].id, identity.uid]);
   }
   sendSession(req, res, await session(pool, rows[0]), 200);
 }));
-const dummyPassword = hashPassword(randomBytes(32).toString('hex'));
+const constantTimeFallbackHash = hashPassword(randomBytes(32).toString('hex'));
 
 app.post('/api/auth/otp/send', route(async (req, res) => {
   const rawPhone = String(req.body.phone || '').trim().replace(/[\s()-]/g, '');
@@ -350,10 +293,7 @@ app.post('/api/auth/otp/send', route(async (req, res) => {
   if (!/^\+[1-9]\d{7,14}$/.test(phone)) {
     throw fail('Enter a valid phone number with country code, e.g. +919876543210', 400, 'auth/invalid-phone-number');
   }
-  const isDev = !production || !environment;
-  const code = (isDev && ['+919876543210', '+919876543211', '+919876543212', '+911234567890'].includes(phone))
-    ? '123456'
-    : Math.floor(100000 + Math.random() * 900000).toString();
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
 
   await pool.query(`
     INSERT INTO allgo_phone_otps (phone, code, expires_at, attempts)
@@ -418,35 +358,7 @@ app.post('/api/auth/otp/verify', route(async (req, res) => {
         [accRows[0].id]
       );
     } else {
-      const client = await pool.connect();
-      try {
-        await client.query('BEGIN');
-        const defaultName = role === 'merchant' ? 'AllGo Partner' : role === 'driver' ? 'AllGo Driver' : 'AllGo User';
-        const insert = await client.query(
-          'INSERT INTO allgo_accounts (id, email, name, password_hash, profile) VALUES ($1, $2, $3, $4, $5::jsonb) RETURNING *',
-          [
-            randomUUID(),
-            `${phone.replace('+', '')}@phone.allgo.in`,
-            defaultName,
-            dummyPassword,
-            JSON.stringify({
-              phone,
-              phoneVerified: true,
-              role,
-              approvalStatus: role === 'driver' ? 'approved' : role === 'merchant' ? 'approved' : 'active',
-              driver_status: 'approved',
-              status: 'approved'
-            })
-          ]
-        );
-        accRows = insert.rows;
-        await client.query('COMMIT');
-      } catch (err) {
-        await client.query('ROLLBACK');
-        throw err;
-      } finally {
-        client.release();
-      }
+      throw fail('No account found for this phone number. Please register first.', 404, 'auth/user-not-found');
     }
   }
 
@@ -465,7 +377,7 @@ app.post('/api/auth/login', route(async (req, res) => {
   const email = emailOf(req.body.email);
   if (typeof req.body.password !== 'string' || req.body.password.length > 128) throw fail('The email or password is incorrect.', 401, 'auth/invalid-credential');
   const { rows } = await pool.query('SELECT * FROM allgo_accounts WHERE email=$1', [email]);
-  const valid = verify(req.body.password, rows[0]?.password_hash || dummyPassword);
+  const valid = verify(req.body.password, rows[0]?.password_hash || constantTimeFallbackHash);
   if (!rows[0] || !valid) throw fail('The email or password is incorrect.', 401, 'auth/invalid-credential');
   // Role enforcement: each app only accepts its own role.
   const app = requestingApp(req);

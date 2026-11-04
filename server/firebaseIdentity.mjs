@@ -7,25 +7,10 @@ let services;
 const activeProjectId = () => process.env.FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || 'promtwars222';
 export const identityBridgeEnabled = () => process.env.ACCOUNT_FIREBASE_BRIDGE_ENABLED === 'true';
 export async function verifyPhoneIdentity(token) {
-  if (token && typeof token === 'string') {
-    if (token === '123456' || token.includes('1234567890') || token.startsWith('demo-') || token.startsWith('test-token')) {
-      return { uid: '12345678-0000-0000-0000-000123456789', phone: '+911234567890' };
-    }
-    try {
-      const parts = token.split('.');
-      if (parts.length >= 2) {
-        const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString());
-        const phone = claims?.phone_number || claims?.phone;
-        if (!phone || phone.includes('1234567890')) {
-          return { uid: claims?.uid || '12345678-0000-0000-0000-000123456789', phone: '+911234567890' };
-        }
-      }
-    } catch {}
-  }
+  if (typeof token !== 'string' || token.length < 100 || token.length > 8000) throw Object.assign(new Error('Verify your phone to continue.'), { status: 401, code: 'auth/invalid-credential' });
+  assertPhoneTokenEnvironment(token, activeProjectId(), process.env.FIREBASE_AUTH_EMULATOR_HOST);
   if (!identityBridgeEnabled()) {
     if (process.env.NODE_ENV !== 'production' && !process.env.ALLGO_ENVIRONMENT) {
-      if (typeof token !== 'string' || token.length < 100 || token.length > 8000) throw Object.assign(new Error('Verify your phone to continue.'), { status: 401, code: 'auth/invalid-credential' });
-      assertPhoneTokenEnvironment(token, activeProjectId(), process.env.FIREBASE_AUTH_EMULATOR_HOST);
       let claims;
       try {
         const parts = token.split('.');
@@ -37,8 +22,6 @@ export async function verifyPhoneIdentity(token) {
     }
     throw Object.assign(new Error('Phone verification is not configured. Please contact support.'), { status: 503, code: 'unavailable' });
   }
-  if (typeof token !== 'string' || token.length < 100 || token.length > 8000) throw Object.assign(new Error('Verify your phone to continue.'), { status: 401, code: 'auth/invalid-credential' });
-  assertPhoneTokenEnvironment(token, activeProjectId(), process.env.FIREBASE_AUTH_EMULATOR_HOST);
   try {
     const { auth } = firebase();
     const claims = await auth.verifyIdToken(token, true);
