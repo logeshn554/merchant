@@ -433,7 +433,9 @@ service cloud.firestore {
       allow write: if false;
 
       match /catalog_items/{itemId} {
-        allow read: if resource.data.get('publicationStatus', '') == 'published'
+        allow read: if isSignedIn()
+          && (isAdmin() || merchantPermissionCheck(businessId, resource.data.get('sellerVertical', ''), 'catalog'))
+          && resource.data.get('publicationStatus', '') == 'published'
           && get(/databases/$(database)/documents/merchant_businesses/$(businessId)).data.get('onboardingStatus', '') == 'approved'
           && get(/databases/$(database)/documents/merchant_businesses/$(businessId)).data.get('merchantEligibility', {}).get('status', '') == 'verified';
         allow write: if false;
