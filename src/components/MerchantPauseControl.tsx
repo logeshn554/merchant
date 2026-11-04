@@ -1,9 +1,10 @@
+import type { SellerVertical } from '../domain/merchant';
 import React, { useState, useEffect } from 'react';
 import { PauseCircle, PlayCircle, Clock, AlertTriangle, X, Check } from 'lucide-react';
 
 export interface MerchantPauseOutlet {
   id: string;
-  merchantType: 'restaurant' | 'grocery';
+  merchantType: SellerVertical;
   name?: string;
   acceptingOrders?: boolean;
   pausedUntil?: string | null;
@@ -16,7 +17,7 @@ export interface MerchantPauseControlProps {
   canManageOrders?: boolean;
   onSetPause?: (input: {
     merchantId: string;
-    merchantType: 'restaurant' | 'grocery';
+    merchantType: SellerVertical;
     durationMinutes: number | 'indefinite';
     reason?: string;
   }) => Promise<{

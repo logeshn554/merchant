@@ -1,8 +1,9 @@
+import type { SellerVertical } from '../domain/merchant';
 import { useEffect, useState, type FormEvent } from 'react';
 import { getMerchantCapacity, setMerchantCapacity, type MerchantCapacity } from '../data/firestoreHelper';
 import { Gauge, AlertCircle, CheckCircle2 } from 'lucide-react';
 
-export default function MerchantCapacityEditor({ id, type }: { id: string; type: 'restaurant' | 'grocery' }) {
+export default function MerchantCapacityEditor({ id, type }: { id: string; type: SellerVertical }) {
   const [capacity, setCapacity] = useState<MerchantCapacity | null>(null);
   const [maxOrders, setMaxOrders] = useState<number>(20);
   const [loading, setLoading] = useState(true);

@@ -1,3 +1,4 @@
+import type { SellerVertical } from '../domain/merchant';
 import type { GroceryProduct, MenuItem } from '../types';
 
 function safeImage(value: string | undefined) {
@@ -8,7 +9,7 @@ function safeImage(value: string | undefined) {
 
 export default function MerchantStorefrontPreview({ business, type, items }: {
   business: { name: string; address: string; acceptingOrders: boolean };
-  type: 'restaurant' | 'grocery';
+  type: SellerVertical;
   items: (MenuItem | GroceryProduct)[];
 }) {
   const categories = [...new Set(items.map(item => item.category || 'Other'))].sort((a, b) => a.localeCompare(b));

@@ -1,8 +1,9 @@
+import type { SellerVertical } from '../domain/merchant';
 import { useEffect, useRef, useState } from 'react';
 import { onSnapshot, doc, getDoc } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase';
-export default function MerchantClosuresEditor({ id, type }: { id: string; type: 'restaurant' | 'grocery' }) {
+export default function MerchantClosuresEditor({ id, type }: { id: string; type: SellerVertical }) {
   const [dates, setDates] = useState<string[]>([]), [revision, setRevision] = useState<number | null>(null), [date, setDate] = useState(''), [reason, setReason] = useState(''), [busy, setBusy] = useState(false), [message, setMessage] = useState(''), [changed, setChanged] = useState(false);
   const command = useRef<{ key: string; id: string } | null>(null), dirty = useRef(false);
   useEffect(() => {

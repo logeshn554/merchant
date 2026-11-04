@@ -1,3 +1,4 @@
+import type { SellerVertical } from '../domain/merchant';
 import { 
   collection, 
   doc, 
@@ -21,15 +22,15 @@ import { Booking, UserProfile, DriverProfile, SavedAddress, SupportTicket, Drive
 import type { ServiceFareBreakdown } from '../design-system/serviceQuote';
 import { subscriptionGroup } from './subscriptionGroup';
 
-export function listenToMerchantHours(id: string, type: 'restaurant' | 'grocery', callback: (value: { weeklyHours?: Record<string, { open: string; close: string }[]>; timeZone?: string; acceptingOrders?: boolean; pausedUntil?: string | null; pausedAt?: string | null; pausedReason?: string | null }) => void, onError: (error: unknown) => void) {
+export function listenToMerchantHours(id: string, type: SellerVertical, callback: (value: { weeklyHours?: Record<string, { open: string; close: string }[]>; timeZone?: string; acceptingOrders?: boolean; pausedUntil?: string | null; pausedAt?: string | null; pausedReason?: string | null }) => void, onError: (error: unknown) => void) {
   return onSnapshot(doc(db, type === 'restaurant' ? 'restaurants' : 'grocery_stores', id), snapshot => { if (!snapshot.exists()) { onError(new Error('Business unavailable.')); return; } callback(snapshot.data()); }, onError);
 }
-export async function setMerchantHours(merchantId: string, merchantType: 'restaurant' | 'grocery', weeklyHours: Record<string, { open: string; close: string }[]>, timeZone: string, acceptingOrders?: boolean) {
+export async function setMerchantHours(merchantId: string, merchantType: SellerVertical, weeklyHours: Record<string, { open: string; close: string }[]>, timeZone: string, acceptingOrders?: boolean) {
   return (await httpsCallable(functions, 'setMerchantHours')({ merchantId, merchantType, weeklyHours, timeZone, ...(typeof acceptingOrders === 'boolean' ? { acceptingOrders } : {}) })).data;
 }
 export async function setMerchantPause(input: {
   merchantId: string;
-  merchantType: 'restaurant' | 'grocery';
+  merchantType: SellerVertical;
   durationMinutes: number | 'indefinite';
   reason?: string;
 }): Promise<{
@@ -43,25 +44,25 @@ export async function setMerchantPause(input: {
   return (await httpsCallable(functions, 'setMerchantPause')(input)).data as any;
 }
 export type MerchantCapacity = { maxPreparationOrders: number; activePreparationOrders: number; revision: number };
-export async function getMerchantCapacity(input: { merchantId: string; merchantType: 'restaurant' | 'grocery' }): Promise<MerchantCapacity> {
+export async function getMerchantCapacity(input: { merchantId: string; merchantType: SellerVertical }): Promise<MerchantCapacity> {
   return (await httpsCallable<typeof input, MerchantCapacity>(functions, 'getMerchantCapacity')(input)).data;
 }
-export async function setMerchantCapacity(input: { merchantId: string; merchantType: 'restaurant' | 'grocery'; maxPreparationOrders: number; expectedRevision: number }): Promise<MerchantCapacity> {
+export async function setMerchantCapacity(input: { merchantId: string; merchantType: SellerVertical; maxPreparationOrders: number; expectedRevision: number }): Promise<MerchantCapacity> {
   return (await httpsCallable<typeof input, MerchantCapacity>(functions, 'setMerchantCapacity')(input)).data;
 }
-export type MerchantBusinessSummary = { id: string; merchantType: 'restaurant' | 'grocery'; name: string; address: string; timeZone?: string; profileRevision?: number; acceptingOrders: boolean; pausedUntil?: string | null; pausedAt?: string | null; pausedReason?: string | null; applicationId?: string; applicationNeedsInformation?: boolean; permissions?: Array<'orders' | 'catalog' | 'business'>; canManageStaff?: boolean };
+export type MerchantBusinessSummary = { id: string; merchantType: SellerVertical; name: string; address: string; timeZone?: string; profileRevision?: number; acceptingOrders: boolean; pausedUntil?: string | null; pausedAt?: string | null; pausedReason?: string | null; applicationId?: string; applicationNeedsInformation?: boolean; permissions?: Array<'orders' | 'catalog' | 'business'>; canManageStaff?: boolean };
 export async function listMerchantBusinesses(): Promise<MerchantBusinessSummary[]> {
   const result = (await httpsCallable<void, { businesses: MerchantBusinessSummary[] }>(functions, 'listMerchantBusinesses')()).data;
   return result.businesses;
 }
 export type MerchantOffer = { code: string; type: 'fixed' | 'percent'; discountCents?: number; percentBps?: number; maxDiscountCents?: number; minAmountCents: number; maxRedemptions: number; redeemedCount: number; enabled: boolean; expiresAt: string | null; version: number };
-export async function listMerchantOffers(input: { merchantId: string; merchantType: 'restaurant' | 'grocery' }): Promise<{ offers: MerchantOffer[]; hasMore: boolean }> {
+export async function listMerchantOffers(input: { merchantId: string; merchantType: SellerVertical }): Promise<{ offers: MerchantOffer[]; hasMore: boolean }> {
   return (await httpsCallable<typeof input, { offers: MerchantOffer[]; hasMore: boolean }>(functions, 'listMerchantOffers')(input)).data;
 }
-export async function saveMerchantOffer(input: { merchantId: string; merchantType: 'restaurant' | 'grocery'; code: string; requestId: string; expectedVersion: number; enabled: boolean; type: 'fixed' | 'percent'; discountCents?: number; percentBps?: number; maxDiscountCents?: number; minAmountCents: number; maxRedemptions: number; expiresAt: string }): Promise<{ code: string; version: number; enabled: boolean }> {
+export async function saveMerchantOffer(input: { merchantId: string; merchantType: SellerVertical; code: string; requestId: string; expectedVersion: number; enabled: boolean; type: 'fixed' | 'percent'; discountCents?: number; percentBps?: number; maxDiscountCents?: number; minAmountCents: number; maxRedemptions: number; expiresAt: string }): Promise<{ code: string; version: number; enabled: boolean }> {
   return (await httpsCallable<typeof input, { code: string; version: number; enabled: boolean }>(functions, 'saveMerchantOffer')(input)).data;
 }
-export async function updateMerchantBusinessProfile(input: { merchantId: string; merchantType: 'restaurant' | 'grocery'; name: string; address: string; timeZone: string; expectedRevision: number; requestId: string }) {
+export async function updateMerchantBusinessProfile(input: { merchantId: string; merchantType: SellerVertical; name: string; address: string; timeZone: string; expectedRevision: number; requestId: string }) {
   return (await httpsCallable<typeof input, { updated: true; revision: number }>(functions, 'updateMerchantBusinessProfile')(input)).data;
 }
 export async function getTransportOperatorDashboard() {
@@ -116,7 +117,7 @@ export type MerchantStaffMember = {
 export type MerchantStaffInvite = {
   inviteCode: string;
   merchantId: string;
-  merchantType: 'restaurant' | 'grocery';
+  merchantType: SellerVertical;
   role: 'manager' | 'staff';
   permissions: Array<StaffPermission>;
   contactType: 'phone' | 'email' | 'code';
@@ -131,24 +132,24 @@ export type MerchantStaffActivity = {
   actorId: string;
   actorName: string;
   merchantId: string;
-  merchantType: 'restaurant' | 'grocery';
+  merchantType: SellerVertical;
   details: Record<string, unknown>;
   createdAt: string;
 };
 
-export async function listMerchantStaff(merchantId: string, merchantType: 'restaurant' | 'grocery'): Promise<MerchantStaffMember[]> {
-  const result = (await httpsCallable<{ merchantId: string; merchantType: 'restaurant' | 'grocery' }, { members: MerchantStaffMember[] }>(functions, 'listMerchantStaff')({ merchantId, merchantType })).data;
+export async function listMerchantStaff(merchantId: string, merchantType: SellerVertical): Promise<MerchantStaffMember[]> {
+  const result = (await httpsCallable<{ merchantId: string; merchantType: SellerVertical }, { members: MerchantStaffMember[] }>(functions, 'listMerchantStaff')({ merchantId, merchantType })).data;
   return result.members;
 }
-export async function grantMerchantStaffAccess(input: { merchantId: string; merchantType: 'restaurant' | 'grocery'; staffUid: string; permissions: Array<StaffPermission>; role?: 'manager' | 'staff' }) {
+export async function grantMerchantStaffAccess(input: { merchantId: string; merchantType: SellerVertical; staffUid: string; permissions: Array<StaffPermission>; role?: 'manager' | 'staff' }) {
   return (await httpsCallable(functions, 'grantMerchantStaffAccess')(input)).data;
 }
-export async function revokeMerchantStaffAccess(input: { merchantId: string; merchantType: 'restaurant' | 'grocery'; staffUid: string }) {
+export async function revokeMerchantStaffAccess(input: { merchantId: string; merchantType: SellerVertical; staffUid: string }) {
   return (await httpsCallable(functions, 'revokeMerchantStaffAccess')(input)).data;
 }
 export async function createMerchantStaffInvite(input: {
   merchantId: string;
-  merchantType: 'restaurant' | 'grocery';
+  merchantType: SellerVertical;
   contactType?: 'phone' | 'email' | 'code';
   targetContact?: string;
   role?: 'manager' | 'staff';
@@ -156,27 +157,27 @@ export async function createMerchantStaffInvite(input: {
 }): Promise<{ success: boolean; inviteCode: string; role: string; permissions: string[]; expiresAt: string }> {
   return (await httpsCallable<typeof input, { success: boolean; inviteCode: string; role: string; permissions: string[]; expiresAt: string }>(functions, 'createMerchantStaffInvite')(input)).data;
 }
-export async function listMerchantStaffInvites(merchantId: string, merchantType: 'restaurant' | 'grocery'): Promise<MerchantStaffInvite[]> {
-  const result = (await httpsCallable<{ merchantId: string; merchantType: 'restaurant' | 'grocery' }, { invites: MerchantStaffInvite[] }>(functions, 'listMerchantStaffInvites')({ merchantId, merchantType })).data;
+export async function listMerchantStaffInvites(merchantId: string, merchantType: SellerVertical): Promise<MerchantStaffInvite[]> {
+  const result = (await httpsCallable<{ merchantId: string; merchantType: SellerVertical }, { invites: MerchantStaffInvite[] }>(functions, 'listMerchantStaffInvites')({ merchantId, merchantType })).data;
   return result.invites;
 }
-export async function cancelMerchantStaffInvite(merchantId: string, merchantType: 'restaurant' | 'grocery', inviteCode: string): Promise<{ cancelled: boolean }> {
-  return (await httpsCallable<{ merchantId: string; merchantType: 'restaurant' | 'grocery'; inviteCode: string }, { cancelled: boolean }>(functions, 'cancelMerchantStaffInvite')({ merchantId, merchantType, inviteCode })).data;
+export async function cancelMerchantStaffInvite(merchantId: string, merchantType: SellerVertical, inviteCode: string): Promise<{ cancelled: boolean }> {
+  return (await httpsCallable<{ merchantId: string; merchantType: SellerVertical; inviteCode: string }, { cancelled: boolean }>(functions, 'cancelMerchantStaffInvite')({ merchantId, merchantType, inviteCode })).data;
 }
-export async function acceptMerchantStaffInvite(inviteCode: string): Promise<{ success: boolean; merchantId: string; merchantType: 'restaurant' | 'grocery'; permissions: string[]; role: string }> {
-  return (await httpsCallable<{ inviteCode: string }, { success: boolean; merchantId: string; merchantType: 'restaurant' | 'grocery'; permissions: string[]; role: string }>(functions, 'acceptMerchantStaffInvite')({ inviteCode })).data;
+export async function acceptMerchantStaffInvite(inviteCode: string): Promise<{ success: boolean; merchantId: string; merchantType: SellerVertical; permissions: string[]; role: string }> {
+  return (await httpsCallable<{ inviteCode: string }, { success: boolean; merchantId: string; merchantType: SellerVertical; permissions: string[]; role: string }>(functions, 'acceptMerchantStaffInvite')({ inviteCode })).data;
 }
-export async function listMerchantStaffActivity(merchantId: string, merchantType: 'restaurant' | 'grocery', limit?: number): Promise<MerchantStaffActivity[]> {
-  const result = (await httpsCallable<{ merchantId: string; merchantType: 'restaurant' | 'grocery'; limit?: number }, { activities: MerchantStaffActivity[] }>(functions, 'listMerchantStaffActivity')({ merchantId, merchantType, limit })).data;
+export async function listMerchantStaffActivity(merchantId: string, merchantType: SellerVertical, limit?: number): Promise<MerchantStaffActivity[]> {
+  const result = (await httpsCallable<{ merchantId: string; merchantType: SellerVertical; limit?: number }, { activities: MerchantStaffActivity[] }>(functions, 'listMerchantStaffActivity')({ merchantId, merchantType, limit })).data;
   return result.activities;
 }
-export async function logMerchantStaffActivity(merchantId: string, merchantType: 'restaurant' | 'grocery', action: string, details?: Record<string, unknown>): Promise<{ success: boolean }> {
-  return (await httpsCallable<{ merchantId: string; merchantType: 'restaurant' | 'grocery'; action: string; details?: Record<string, unknown> }, { success: boolean }>(functions, 'logMerchantStaffActivity')({ merchantId, merchantType, action, details })).data;
+export async function logMerchantStaffActivity(merchantId: string, merchantType: SellerVertical, action: string, details?: Record<string, unknown>): Promise<{ success: boolean }> {
+  return (await httpsCallable<{ merchantId: string; merchantType: SellerVertical; action: string; details?: Record<string, unknown> }, { success: boolean }>(functions, 'logMerchantStaffActivity')({ merchantId, merchantType, action, details })).data;
 }
-export async function saveCatalogItem(merchantId: string, merchantType: 'restaurant' | 'grocery', itemId: string, item: unknown) {
+export async function saveCatalogItem(merchantId: string, merchantType: SellerVertical, itemId: string, item: unknown) {
   return (await httpsCallable(functions, 'saveCatalogItem')({ merchantId, merchantType, itemId, item })).data;
 }
-export async function bulkSaveCatalogItems(input: { merchantId: string; merchantType: 'restaurant' | 'grocery'; requestId: string; items: { itemId: string; item: Record<string, unknown>; expectedStock?: number }[] }) {
+export async function bulkSaveCatalogItems(input: { merchantId: string; merchantType: SellerVertical; requestId: string; items: { itemId: string; item: Record<string, unknown>; expectedStock?: number }[] }) {
   return (await httpsCallable<typeof input, { saved: number; created: number; updated: number; requestId: string }>(functions, 'bulkSaveCatalogItems')(input)).data;
 }
 export type UploadCatalogPhotoResult = {
@@ -188,7 +189,7 @@ export type UploadCatalogPhotoResult = {
 };
 export async function uploadCatalogPhoto(input: {
   merchantId: string;
-  merchantType: 'restaurant' | 'grocery';
+  merchantType: SellerVertical;
   itemId: string;
   fileBase64: string;
   contentType: 'image/jpeg' | 'image/png' | 'image/webp';
@@ -199,7 +200,7 @@ export async function submitOrderReview(bookingId: string, rating: number, comme
   return (await httpsCallable(functions,'submitOrderReview')({bookingId,rating,comment})).data;
 }
 export type MerchantOrderReview = { reviewId: string; bookingId: string; rating: number; comment: string; createdAt: string };
-export async function listMerchantOrderReviews(input: { merchantId: string; merchantType: 'restaurant' | 'grocery'; cursor?: string | null }): Promise<{ reviews: MerchantOrderReview[]; nextCursor: string | null }> {
+export async function listMerchantOrderReviews(input: { merchantId: string; merchantType: SellerVertical; cursor?: string | null }): Promise<{ reviews: MerchantOrderReview[]; nextCursor: string | null }> {
   return (await httpsCallable<typeof input, { reviews: MerchantOrderReview[]; nextCursor: string | null }>(functions, 'listMerchantOrderReviews')(input)).data;
 }
 export async function exportAccountPage(section: string, cursor: string | null = null, parentId?: string): Promise<{items:unknown[];nextCursor:string|null}> {
@@ -212,10 +213,10 @@ export type UserNotification = { id: string; eventId: string; bookingId?: string
 export type MerchantSettlementEntry = { bookingId: string; merchantId: string; serviceType: 'food' | 'grocery'; contractVersion: number; commissionBps: number; itemValueCents: number; discountCents: number; commissionCents: number; payableCents: number; createdAt: { toDate: () => Date } };
 export type MerchantSettlementBalance = { merchantId: string; serviceType: 'food' | 'grocery'; currency: string; availableCents: number; reservedCents: number; updatedAt: { toDate: () => Date } };
 export type MerchantSettlementAgreement = { status: 'not_configured' | 'pending_acceptance' | 'active'; version: number; serviceType?: 'food' | 'grocery'; commissionBps?: number; agreementReference?: string; acceptedAt?: unknown };
-export async function getMerchantSettlementAgreement(merchantId: string, merchantType: 'restaurant' | 'grocery') {
+export async function getMerchantSettlementAgreement(merchantId: string, merchantType: SellerVertical) {
   return (await httpsCallable(functions, 'getMerchantSettlementAgreement')({ merchantId, merchantType })).data as MerchantSettlementAgreement;
 }
-export async function acceptMerchantSettlementAgreement(input: { merchantId: string; merchantType: 'restaurant' | 'grocery'; expectedVersion: number; requestId: string; accepted: true }) {
+export async function acceptMerchantSettlementAgreement(input: { merchantId: string; merchantType: SellerVertical; expectedVersion: number; requestId: string; accepted: true }) {
   return (await httpsCallable(functions, 'acceptMerchantSettlementAgreement')(input)).data as { status: string; version: number };
 }
 export type MerchantPayoutAccount = {
@@ -229,7 +230,7 @@ export type MerchantPayoutAccount = {
 };
 export async function setMerchantPayoutAccount(input: {
   merchantId: string;
-  merchantType: 'restaurant' | 'grocery';
+  merchantType: SellerVertical;
   accountType: 'bank_account' | 'upi';
   beneficiaryName: string;
   accountNumber?: string;
@@ -239,7 +240,7 @@ export async function setMerchantPayoutAccount(input: {
 }): Promise<{ success: boolean; status: string; accountType: string; maskedAccount: string; beneficiaryName: string }> {
   return (await httpsCallable(functions, 'setMerchantPayoutAccount')(input)).data as { success: boolean; status: string; accountType: string; maskedAccount: string; beneficiaryName: string };
 }
-export async function getMerchantPayoutAccount(merchantId: string, merchantType: 'restaurant' | 'grocery'): Promise<MerchantPayoutAccount> {
+export async function getMerchantPayoutAccount(merchantId: string, merchantType: SellerVertical): Promise<MerchantPayoutAccount> {
   return (await httpsCallable(functions, 'getMerchantPayoutAccount')({ merchantId, merchantType })).data as MerchantPayoutAccount;
 }
 export type MerchantTaxCompliance = {
@@ -249,13 +250,13 @@ export type MerchantTaxCompliance = {
 };
 export async function setMerchantTaxCompliance(input: {
   merchantId: string;
-  merchantType: 'restaurant' | 'grocery';
+  merchantType: SellerVertical;
   gstin?: string;
   fssaiNumber?: string;
 }): Promise<{ success: boolean; gstin: string | null; fssaiNumber: string | null }> {
   return (await httpsCallable(functions, 'setMerchantTaxCompliance')(input)).data as { success: boolean; gstin: string | null; fssaiNumber: string | null };
 }
-export async function getMerchantTaxCompliance(merchantId: string, merchantType: 'restaurant' | 'grocery'): Promise<MerchantTaxCompliance> {
+export async function getMerchantTaxCompliance(merchantId: string, merchantType: SellerVertical): Promise<MerchantTaxCompliance> {
   return (await httpsCallable(functions, 'getMerchantTaxCompliance')({ merchantId, merchantType })).data as MerchantTaxCompliance;
 }
 export type WeeklySettlementStatement = {
@@ -278,13 +279,13 @@ export type MerchantWeeklySettlementsResult = {
   merchantFssai: string;
   platformGstin: string;
 };
-export async function getMerchantWeeklySettlements(merchantId: string, merchantType: 'restaurant' | 'grocery'): Promise<MerchantWeeklySettlementsResult> {
+export async function getMerchantWeeklySettlements(merchantId: string, merchantType: SellerVertical): Promise<MerchantWeeklySettlementsResult> {
   return (await httpsCallable(functions, 'getMerchantWeeklySettlements')({ merchantId, merchantType })).data as MerchantWeeklySettlementsResult;
 }
-export function listenToMerchantSettlementBalance(merchantId: string, merchantType: 'restaurant' | 'grocery', callback: (balance: MerchantSettlementBalance | null) => void, onError: (error: unknown) => void) {
+export function listenToMerchantSettlementBalance(merchantId: string, merchantType: SellerVertical, callback: (balance: MerchantSettlementBalance | null) => void, onError: (error: unknown) => void) {
   return onSnapshot(doc(db, 'merchant_balances', merchantId), snapshot => callback(snapshot.exists() ? snapshot.data() as MerchantSettlementBalance : null), onError);
 }
-export function listenToMerchantSettlementEntries(merchantId: string, merchantType: 'restaurant' | 'grocery', callback: (entries: MerchantSettlementEntry[]) => void, onError: (error: unknown) => void) {
+export function listenToMerchantSettlementEntries(merchantId: string, merchantType: SellerVertical, callback: (entries: MerchantSettlementEntry[]) => void, onError: (error: unknown) => void) {
   const serviceType = merchantType === 'restaurant' ? 'food' : 'grocery';
   const records = collection(db, `merchant_ledger/${merchantId}/entries`);
   return onSnapshot(query(records, where('merchantId', '==', merchantId), where('serviceType', '==', serviceType), orderBy('createdAt', 'desc'), limit(50)), snapshot => callback(snapshot.docs.map(item => item.data() as MerchantSettlementEntry)), onError);
@@ -653,7 +654,7 @@ export function listenToCustomerBookings(userId: string, callback: (bookings: Bo
   return group.stop;
 }
 
-export type MerchantBookingOutlet = { merchantId: string; merchantType: 'restaurant' | 'grocery' };
+export type MerchantBookingOutlet = { merchantId: string; merchantType: SellerVertical };
 export const ACTIVE_MERCHANT_STATUSES = [
   'pending',
   'driver_offer_pending',
@@ -763,7 +764,7 @@ export function listenToMerchantScorecard(merchantId: string, callback: (scoreca
     callback(snapshot.exists() ? (snapshot.data() as { missedOrders?: number; cancelledAfterAccept?: number; itemRemovals?: number }) : { missedOrders: 0, cancelledAfterAccept: 0, itemRemovals: 0 });
   }, onError);
 }
-export async function updateMerchantCatalog(catalogId: string, merchantType: 'restaurant' | 'grocery', itemId: string, changes: { available?: boolean; stock?: number; expectedStock?: number }) {
+export async function updateMerchantCatalog(catalogId: string, merchantType: SellerVertical, itemId: string, changes: { available?: boolean; stock?: number; expectedStock?: number }) {
   return (await httpsCallable(functions, 'updateMerchantCatalog')({ catalogId, merchantType, itemId, ...changes })).data;
 }
 
@@ -1035,10 +1036,10 @@ export async function recordTransportOperatorPayout(input: { requestId: string; 
 export async function listTransportOperatorSettlements() { return (await httpsCallable<void, { entries: Array<{ operatorId: string; bookingId: string; grossCents: number; driverPayoutCents: number; amountCents: number; createdAt: string | null }>; hasMore: boolean }>(functions, 'listTransportOperatorSettlements')()).data; }
 export async function reviewTransportOperatorSettlement(input: { operatorId: string; bookingId: string; decision: 'approved' | 'rejected'; reason: string; requestId: string }) { return (await httpsCallable<typeof input, { status: string }>(functions, 'reviewTransportOperatorSettlement')(input)).data; }
 export async function recordTransportOperatorPayoutResult(input: { requestId: string; status: 'paid' | 'failed'; reference: string }) { return (await httpsCallable<typeof input, { status: string }>(functions, 'recordTransportOperatorPayout')(input)).data; }
-export async function requestMerchantPayout(input: { merchantId: string; merchantType: 'restaurant' | 'grocery'; requestId: string }) { return (await httpsCallable<typeof input, { requestId: string; amountCents: number; status: string }>(functions, 'requestMerchantPayout')(input)).data; }
+export async function requestMerchantPayout(input: { merchantId: string; merchantType: SellerVertical; requestId: string }) { return (await httpsCallable<typeof input, { requestId: string; amountCents: number; status: string }>(functions, 'requestMerchantPayout')(input)).data; }
 export async function recordMerchantPayout(input: { requestId: string; status: 'paid' | 'failed'; reference: string }) { return (await httpsCallable<typeof input, { status: string }>(functions, 'recordMerchantPayout')(input)).data; }
 export async function recordMerchantPayoutResult(input: { requestId: string; status: 'paid' | 'failed'; reference: string }) { return (await httpsCallable<typeof input, { status: string }>(functions, 'recordMerchantPayout')(input)).data; }
-export async function getMerchantPayableBalance(merchantId: string, merchantType: 'restaurant' | 'grocery') { return (await httpsCallable<{ merchantId: string; merchantType: string }, { availableCents: number; reservedCents: number; currency: string }>(functions, 'getMerchantPayableBalance')({ merchantId, merchantType })).data; }
+export async function getMerchantPayableBalance(merchantId: string, merchantType: SellerVertical) { return (await httpsCallable<{ merchantId: string; merchantType: string }, { availableCents: number; reservedCents: number; currency: string }>(functions, 'getMerchantPayableBalance')({ merchantId, merchantType })).data; }
 export function listenToMerchantPayoutRequests(merchantId: string, callback: (records: PayoutRecord[]) => void, onError: (error: unknown) => void) {
   const records = collection(db, 'payout_requests');
   return onSnapshot(query(records, where('merchantId', '==', merchantId), where('beneficiaryType', '==', 'merchant')), snapshot => callback(snapshot.docs.map(record => ({ ...record.data(), requestId: record.id } as PayoutRecord)).sort((a, b) => b.createdAt.localeCompare(a.createdAt))), onError);

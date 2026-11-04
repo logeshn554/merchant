@@ -53,13 +53,14 @@ import {
   type MerchantBusinessSummary
 } from '../data/firestoreHelper';
 
+import { type SellerVertical } from '../domain/merchant';
 export type { MerchantPanel } from './merchantNavigation';
 
 interface MerchantPortalProps {
   activeBookings: Booking[];
   userId: string;
   merchantId?: string;
-  merchantType?: 'restaurant' | 'grocery';
+  merchantType?: SellerVertical;
 }
 
 export default function MerchantPortal({ activeBookings, userId, merchantId, merchantType }: MerchantPortalProps) {
@@ -74,7 +75,7 @@ export default function MerchantPortal({ activeBookings, userId, merchantId, mer
   const isOrderBusy = (id: string) => Boolean(busyOrders[id]);
   const [businesses, setBusinesses] = useState<MerchantBusinessSummary[]>([]);
   const [selectedOutlet, setSelectedOutlet] = useState(merchantId && merchantType ? `${merchantType}:${merchantId}` : '');
-  const outletOptions = businesses.length ? businesses : merchantId && merchantType ? [{ id: merchantId, merchantType, name: merchantId, address: '', acceptingOrders: false }] : [];
+  const outletOptions: MerchantBusinessSummary[] = businesses.length ? businesses : merchantId && merchantType ? [{ id: merchantId, merchantType, name: merchantId, address: '', acceptingOrders: false }] : [];
   const activeOutlet = outletOptions.find(outlet => `${outlet.merchantType}:${outlet.id}` === selectedOutlet) || outletOptions[0];
   const activeMerchantId = activeOutlet?.id;
   const activeMerchantType = activeOutlet?.merchantType;
@@ -384,7 +385,7 @@ export default function MerchantPortal({ activeBookings, userId, merchantId, mer
         <BookingNotificationNotice {...notification} onDismiss={notification.dismiss}/>
         {((activeMerchantType === 'restaurant' ? foodOrders : groceryOrders).some(order => order.status === 'pending')) && <MerchantLiveRegion>New order waiting for your response.</MerchantLiveRegion>}
         <div className="merchant-overview">
-          <strong>{activeOutlet?.name} · {activeMerchantType === 'restaurant' ? 'Restaurant operations' : 'Grocery operations'}</strong>
+          <strong>{activeOutlet?.name} · {activeMerchantType === 'restaurant' ? 'Restaurant operations' : activeMerchantType === 'home_kitchen' ? 'Home kitchen operations' : activeMerchantType === 'handmade' ? 'Handmade operations' : 'Grocery operations'}</strong>
           {canManageOrders && <span>{(activeMerchantType === 'restaurant' ? foodOrders : groceryOrders).length} active orders · {completedToday} completed today</span>}
         </div>
 

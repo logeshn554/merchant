@@ -1,3 +1,4 @@
+import type { SellerVertical } from '../domain/merchant';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   listMerchantStaff,
@@ -28,7 +29,7 @@ export default function MerchantStaffManager({
   merchantType
 }: {
   merchantId: string;
-  merchantType: 'restaurant' | 'grocery';
+  merchantType: SellerVertical;
 }) {
   const [tab, setTab] = useState<'members' | 'invite' | 'pending' | 'activity' | 'claim'>('members');
   const [members, setMembers] = useState<MerchantStaffMember[]>([]);

@@ -1,17 +1,22 @@
+import type { SellerVertical } from '../domain/merchant';
 import type { GroceryProduct, MenuItem } from '../types';
 
-export type CatalogType = 'restaurant' | 'grocery';
+export type CatalogType = SellerVertical;
 export type BulkCatalogRow = { itemId: string; item: Record<string, unknown>; expectedStock?: number; line: number };
 export type BulkCatalogParseResult = { rows: BulkCatalogRow[]; errors: string[] };
 
 const commonHeaders = ['id', 'name', 'category', 'price', 'description', 'image', 'ingredients', 'allergens'];
 const headersByType: Record<CatalogType, string[]> = {
   restaurant: [...commonHeaders, 'available', 'isVeg', 'servingSize'],
+  home_kitchen: [...commonHeaders, 'available', 'isVeg', 'servingSize'],
   grocery: [...commonHeaders, 'stock', 'expectedStock', 'unit', 'brand', 'storageInstructions', 'countryOfOrigin', 'expiresAt'],
+  handmade: [...commonHeaders, 'stock', 'expectedStock', 'unit', 'brand', 'storageInstructions', 'countryOfOrigin'],
 };
 const requiredHeaders: Record<CatalogType, string[]> = {
   restaurant: ['name', 'category', 'price'],
+  home_kitchen: ['name', 'category', 'price'],
   grocery: ['name', 'category', 'price', 'stock'],
+  handmade: ['name', 'category', 'price', 'stock'],
 };
 
 export function parseCsvTable(source: string): string[][] {

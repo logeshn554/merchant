@@ -1,8 +1,9 @@
+import type { SellerVertical } from '../domain/merchant';
 import { useEffect, useState, type FormEvent } from 'react';
 import { listenToMerchantHours, setMerchantHours } from '../data/firestoreHelper';
 const days = ['sun','mon','tue','wed','thu','fri','sat'] as const;
 type Hours = Record<string, { open: string; close: string }[]>;
-export default function MerchantHoursEditor({ id, type }: { id: string; type: 'restaurant' | 'grocery' }) {
+export default function MerchantHoursEditor({ id, type }: { id: string; type: SellerVertical }) {
   const [hours, setHours] = useState<Hours>({}), [zone,setZone] = useState('Asia/Kolkata'), [accepting,setAccepting] = useState(false);
   const [loaded,setLoaded] = useState(false), [busy,setBusy] = useState(false), [message,setMessage] = useState('');
   useEffect(() => { setLoaded(false); return listenToMerchantHours(id,type,value=>{setHours(value.weeklyHours || {});setZone(value.timeZone || 'Asia/Kolkata');setAccepting(value.acceptingOrders !== false);setLoaded(true);},()=>setMessage('Business hours could not be loaded.')); },[id,type]);

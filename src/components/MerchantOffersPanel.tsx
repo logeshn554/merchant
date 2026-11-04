@@ -1,3 +1,4 @@
+import type { SellerVertical } from '../domain/merchant';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { listMerchantOffers, saveMerchantOffer, type MerchantOffer } from '../data/firestoreHelper';
 
@@ -6,7 +7,7 @@ function amountToCents(value: string) {
   return value.trim() && Number.isFinite(amount) && amount > 0 && amount <= 100000 && Math.round(amount * 100) === amount * 100 ? Math.round(amount * 100) : null;
 }
 
-export default function MerchantOffersPanel({ merchantId, merchantType }: { merchantId: string; merchantType: 'restaurant' | 'grocery' }) {
+export default function MerchantOffersPanel({ merchantId, merchantType }: { merchantId: string; merchantType: SellerVertical }) {
   const [offers, setOffers] = useState<MerchantOffer[]>([]), [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
   const [code, setCode] = useState(''), [kind, setKind] = useState<'fixed' | 'percent'>('fixed'), [discount, setDiscount] = useState(''), [maxDiscount, setMaxDiscount] = useState(''), [minimum, setMinimum] = useState(''), [redemptionLimit, setRedemptionLimit] = useState(''), [expiresAt, setExpiresAt] = useState('');
   const reload = useCallback(async () => {

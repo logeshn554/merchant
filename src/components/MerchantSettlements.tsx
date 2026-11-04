@@ -1,3 +1,4 @@
+import type { SellerVertical } from '../domain/merchant';
 import { useEffect, useState } from 'react';
 import type { Booking } from '../types';
 import type {
@@ -11,7 +12,7 @@ import type {
 } from '../data/firebaseHelper';
 import { useFeedbackDialog } from './useFeedbackDialog';
 
-export default function MerchantSettlements({ bookings, merchantId, merchantType }: { bookings: Booking[]; merchantId: string; merchantType: 'restaurant' | 'grocery' }) {
+export default function MerchantSettlements({ bookings, merchantId, merchantType }: { bookings: Booking[]; merchantId: string; merchantType: SellerVertical }) {
   const { alert, dialog } = useFeedbackDialog();
   const completed = bookings.filter(booking => booking.merchantId === merchantId && booking.serviceType === (merchantType === 'restaurant' ? 'food' : 'grocery') && ['completed', 'delivered'].includes(booking.status));
   const [balance, setBalance] = useState<MerchantSettlementBalance | null>(null), [entries, setEntries] = useState<MerchantSettlementEntry[]>([]), [loading, setLoading] = useState(true), [error, setError] = useState('');

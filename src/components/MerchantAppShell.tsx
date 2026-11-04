@@ -1,9 +1,10 @@
+import type { SellerVertical } from '../domain/merchant';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Bell, ChevronDown, Circle, LogOut, Moon, Sun } from 'lucide-react';
 import { nativeSignOut } from '../nativeNotifications';
 import { MERCHANT_PRIMARY_NAV, type MerchantPanel, isMerchantPanelActive } from './merchantNavigation';
 
-interface OutletOption { id: string; merchantType: 'restaurant' | 'grocery'; name: string; address?: string; }
+interface OutletOption { id: string; merchantType: SellerVertical; name: string; address?: string; }
 interface MerchantAppShellProps {
   children: ReactNode;
   panel: MerchantPanel;

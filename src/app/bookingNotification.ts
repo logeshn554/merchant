@@ -1,8 +1,9 @@
+import type { SellerVertical } from '../domain/merchant';
 import type { Booking } from '../types';
 
 export const pendingBookingStorageKey = 'allgo-open-booking';
 let pendingBookingInMemory: string | null = null;
-export type PartnerBookingScope = { audience: 'driver'; userId: string } | { audience: 'merchant'; merchantId?: string; merchantType?: 'restaurant' | 'grocery' };
+export type PartnerBookingScope = { audience: 'driver'; userId: string } | { audience: 'merchant'; merchantId?: string; merchantType?: SellerVertical };
 export const notificationBookingId = (value: unknown): string | null => typeof value === 'string' && /^ALLGO_[a-zA-Z0-9_-]+$/.test(value) ? value : null;
 export function readPendingBookingId(read: (key: string) => string | null): string | null {
   if (pendingBookingInMemory) return pendingBookingInMemory;

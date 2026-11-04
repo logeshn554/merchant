@@ -1,3 +1,4 @@
+import type { SellerVertical } from '../domain/merchant';
 import React, { useState, useMemo, type FormEvent } from 'react';
 import { 
   Plus, Search, Edit2, Check, X, AlertCircle, Utensils, ShoppingBag, 
@@ -12,7 +13,7 @@ import { useFeedbackDialog } from './useFeedbackDialog';
 
 interface MerchantCatalogEditorProps {
   id: string;
-  type: 'restaurant' | 'grocery';
+  type: SellerVertical;
   items: (MenuItem | GroceryProduct)[];
 }
 

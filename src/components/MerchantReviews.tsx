@@ -1,7 +1,8 @@
+import type { SellerVertical } from '../domain/merchant';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { listMerchantOrderReviews, type MerchantOrderReview } from '../data/firestoreHelper';
 
-export default function MerchantReviews({ merchantId, merchantType }: { merchantId: string; merchantType: 'restaurant' | 'grocery' }) {
+export default function MerchantReviews({ merchantId, merchantType }: { merchantId: string; merchantType: SellerVertical }) {
   const [reviews, setReviews] = useState<MerchantOrderReview[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
