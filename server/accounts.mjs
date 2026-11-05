@@ -7,7 +7,7 @@ import pg from 'pg';
 import { config } from 'dotenv';
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { identityBridgeEnabled, bridgeIdentity, revokeBridgeSessions, verifyPhoneIdentity } from './firebaseIdentity.mjs';
+import { identityBridgeEnabled, revokeBridgeSessions, verifyPhoneIdentity } from './firebaseIdentity.mjs';
 import { registrationRole, signupRequestedRole } from './phoneRegistrationPolicy.mjs';
 import { readSessionCookie, sessionCookieName, cookieOptions } from './sessionPolicy.mjs';
 import { projectLegacyBooking } from './legacyBookingReadModel.mjs';
@@ -496,11 +496,6 @@ app.post('/api/auth/logout', route(async (req, res) => {
   await revokeBridgeSessions(req.account.id, req.tokenHash);
   await pool.query('DELETE FROM allgo_sessions WHERE token_hash=$1', [req.tokenHash]);
   res.clearCookie(sessionCookieName, cookieOptions(production)); res.json({ ok: true });
-}));
-app.post('/api/auth/service-identity', route(async (req, res) => {
-  const result = await bridgeIdentity(pool, req.account, req.tokenHash);
-  if (!result) throw fail('The Firebase service identity bridge is not configured.', 503, 'unavailable');
-  res.json(result);
 }));
 app.patch('/api/account', route(async (req, res) => {
   const changes = {};

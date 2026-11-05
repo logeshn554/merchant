@@ -416,29 +416,17 @@ export async function getOrCreateDriverProfile(driverId: string, lat?: number, l
   const path = `driver_profiles/${driverId}`;
   try {
     const ref = doc(db, 'driver_profiles', driverId);
-    const isDemo = driverId.startsWith('demo-');
     const defaultProfile: DriverProfile = {
       driverId,
       vehicleType: 'bike',
-      vehicleNo: isDemo ? 'KA-01-AB-1234' : '',
-      licenseNo: isDemo ? 'DL-9876543210' : '',
-      status: isDemo ? 'verified' : 'pending',
-      online: isDemo ? true : false,
-      ...(lat !== undefined && lng !== undefined ? { currentLat: lat, currentLng: lng } : isDemo ? { currentLat: 12.9716, currentLng: 77.5946 } : {}),
-      ...(isDemo ? { locationConsent: true, supportedServices: ['food', 'grocery', 'ride', 'parcel', 'takeover', 'transport'] } : {}),
-      todayEarnings: isDemo ? 450 : 0,
-      completedJobs: isDemo ? 3 : 0
+      vehicleNo: '',
+      licenseNo: '',
+      status: 'pending',
+      online: false,
+      ...(lat !== undefined && lng !== undefined ? { currentLat: lat, currentLng: lng } : {}),
+      todayEarnings: 0,
+      completedJobs: 0
     };
-
-    if (isDemo) {
-      try {
-        const snapshot = await getDoc(ref);
-        if (snapshot.exists()) return snapshot.data() as DriverProfile;
-      } catch {
-        // demo fallback
-      }
-      return defaultProfile;
-    }
 
     return await runTransaction(db, async transaction => {
       const snapshot = await transaction.get(ref);
@@ -503,9 +491,6 @@ export async function autocompleteServiceLocations(input: string, sessionToken?:
 }
 
 export function listenToAccountProfile(userId: string, callback: (profile: UserProfile) => void, onError: (error: unknown) => void) {
-  if (userId.startsWith('demo-')) {
-    return () => {};
-  }
   return onSnapshot(doc(db, 'users', userId), snapshot => {
     if (snapshot.exists()) callback(snapshot.data() as UserProfile);
     else onError(new Error('Your account profile is unavailable.'));
@@ -794,18 +779,7 @@ export function listenToDriverBookings(driverId: string, callback: (bookings: Bo
   group.add(() => stopAvailable?.());
   group.add(onSnapshot(doc(db, 'driver_profiles', driverId), (snapshot) => {
     if (!group.active) return;
-    const isDemo = driverId.startsWith('demo-');
-    const profile = (snapshot.data() as DriverProfile | undefined) || (isDemo ? {
-      driverId,
-      status: 'verified' as const,
-      online: true,
-      vehicleType: 'bike' as const,
-      vehicleNo: 'KA-01-AB-1234',
-      licenseNo: 'DL-9876543210',
-      rejectedBookingIds: [],
-      supportedServices: ['food', 'grocery', 'ride', 'parcel', 'takeover', 'transport'],
-      locationConsent: true
-    } as DriverProfile : undefined);
+    const profile = snapshot.data() as DriverProfile | undefined;
     rejected = new Set(profile?.rejectedBookingIds || []);
     supportedServices = new Set(profile?.supportedServices || []);
     vehicleType = profile?.vehicleType || '';
@@ -864,22 +838,7 @@ export function listenToDriverProfiles(callback: (drivers: DriverProfile[]) => v
  * Pushes a chat message into a subcollection of a booking in real-time
  */
 export async function sendChatMessage(bookingId: string, senderId: string, senderName: string, text: string) {
-  try {
-    return (await httpsCallable(functions, 'sendBookingMessage')({ bookingId, text })).data;
-  } catch (err) {
-    if (senderId.startsWith('demo-')) {
-      const colRef = collection(db, 'bookings', bookingId, 'chats');
-      await addDoc(colRef, {
-        senderId,
-        senderName,
-        senderRole: senderId.includes('merchant') ? 'merchant' : senderId.includes('driver') ? 'driver' : 'customer',
-        text,
-        timestamp: new Date().toISOString()
-      }).catch(() => {});
-      return { sent: true };
-    }
-    throw err;
-  }
+  return (await httpsCallable(functions, 'sendBookingMessage')({ bookingId, text })).data;
 }
 
 export interface MaskedCallSession {

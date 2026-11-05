@@ -6,8 +6,6 @@ import { lazy, Suspense, useEffect, useState, useRef } from 'react';
 import { LogOut } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from './firebase';
-import { useNeonAccounts, hasServiceIdentity } from './accounts';
-import VerifyAccount from './components/VerifyAccount';
 import { initializeNativeNotifications, nativeSignOut } from './nativeNotifications';
 import AuthScreen, { authMessage } from './components/AuthScreen';
 import { getOrCreateUserProfile, listenToAccountProfile, listenToBookings, listenToCustomerBookings, listenToDriverBookings, listenToDriverProfiles, listenToMerchantBookings, reverseServiceLocation } from './data/firestoreHelper';
@@ -59,15 +57,14 @@ export default function App() {
   }, [currentUser?.uid]);
 
   useEffect(() => {
-    if (useNeonAccounts && !hasServiceIdentity) return;
-    let disposed = false;
+        let disposed = false;
     let stop: (() => void) | undefined;
     void initializeNativeNotifications().then(cleanup => {
       if (disposed) cleanup();
       else stop = cleanup;
     }).catch(error => console.error('Native notification initialization failed', error));
     return () => { disposed = true; stop?.(); };
-  }, [currentUser?.uid, hasServiceIdentity]);
+  }, [currentUser?.uid]);
 
   useEffect(() => {
     let active = true;
@@ -120,7 +117,7 @@ export default function App() {
       profile => { setUserProfile(profile); setProfileError(''); },
       error => setProfileError(authMessage(error))
     );
-  }, [currentUser?.uid, Boolean(userProfile), hasServiceIdentity]);
+  }, [currentUser?.uid, Boolean(userProfile)]);
 
   useEffect(() => {
     if (!currentUser || !userProfile) return;
@@ -141,7 +138,7 @@ export default function App() {
     }
     group.add(() => { active = false; });
     return group.stop;
-  }, [currentUser?.uid, userProfile?.role, userProfile?.merchantId, userProfile?.merchantType, userProfile?.merchantBusinessIds, userProfile?.merchantStaffAccess, userProfile?.transportOperatorId, hasServiceIdentity, bookingRetry]);
+  }, [currentUser?.uid, userProfile?.role, userProfile?.merchantId, userProfile?.merchantType, userProfile?.merchantBusinessIds, userProfile?.merchantStaffAccess, userProfile?.transportOperatorId, bookingRetry]);
 
   if (authChecking) {
     return (
@@ -176,10 +173,7 @@ export default function App() {
     return <AuthScreen />;
   }
 
-  if (useNeonAccounts && userProfile.serviceIdentityEnabled && !userProfile.emailVerified && !userProfile.phoneVerified) {
-    return <VerifyAccount email={userProfile.email} onSignOut={nativeSignOut} />;
-  }
-
+  
   if (bookingError) {
     return (
       <div className="auth-shell">

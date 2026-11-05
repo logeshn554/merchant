@@ -1,5 +1,4 @@
 import { Capacitor } from '@capacitor/core';
-import { useNeonAccounts, signOutAccount, hasServiceIdentity } from './accounts';
 import { App } from '@capacitor/app';
 import { FirebaseMessaging } from '@capacitor-firebase/messaging';
 import { httpsCallable } from 'firebase/functions';
@@ -47,7 +46,6 @@ function openUrl(raw: string) {
   try { const url = new URL(raw); if (url.protocol === `${appScheme}:` && url.hostname === 'booking') openBooking(decodeURIComponent(url.pathname.slice(1))); } catch { /* Ignore unrelated URLs. */ }
 }
 export async function enableOrderNotifications() {
-  if (useNeonAccounts && !hasServiceIdentity) throw new Error('Verify and connect your account before enabling delivery notifications.');
   if (!Capacitor.isNativePlatform()) throw new Error('Device notifications are available in the Android and iOS apps.');
   if (!Capacitor.isPluginAvailable('FirebaseMessaging')) throw new Error('Native Firebase configuration is missing from this build.');
   const snapshot = pushSnapshot(true);
@@ -57,8 +55,7 @@ export async function enableOrderNotifications() {
   await registerToken(snapshot, undefined, true);
 }
 export async function nativeSignOut() {
-  if (useNeonAccounts) await signOutAccount();
-  else await signOutWithCleanup([cleanupNativeSession], () => signOut(auth));
+  await signOutWithCleanup([cleanupNativeSession], () => signOut(auth));
 }
 export async function initializeNativeNotifications() {
   if (!Capacitor.isNativePlatform()) return () => undefined;

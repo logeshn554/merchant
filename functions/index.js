@@ -339,9 +339,8 @@ exports.confirmMerchantPickup = onCall({ operation: 'confirmMerchantPickup', reg
   return db.runTransaction(async transaction => {
     const bookingRef = db.doc(`bookings/${bookingId}`), booking = await transaction.get(bookingRef), account = await transaction.get(db.doc(`users/${uid}`));
     const data = booking.data(), type = data?.serviceType === 'food' ? 'restaurant' : data?.serviceType === 'grocery' ? 'grocery' : null;
-    const isDemo = uid.startsWith('demo-') || (data?.driverId && data.driverId.startsWith('demo-'));
-    if (!data || !type || (!isDemo && !merchantHasPermission(account.data(), data.merchantId, type, 'orders'))) throw new HttpsError('permission-denied', 'This order is not assigned to your business or your account cannot manage orders.');
-    if ((!['preparing', 'ready'].includes(data.status) && !isDemo) || !data.driverId || (!data.arrivedAtPickup && !isDemo) || data.exception?.status === 'open' || !['paid', 'pending_cod'].includes(data.paymentStatus)) throw new HttpsError('failed-precondition', 'A delivery partner must arrive and the order must be clear for handoff before you can confirm pickup.');
+    if (!data || !type || !merchantHasPermission(account.data(), data.merchantId, type, 'orders')) throw new HttpsError('permission-denied', 'This order is not assigned to your business or your account cannot manage orders.');
+    if (!['preparing', 'ready'].includes(data.status) || !data.driverId || !data.arrivedAtPickup || data.exception?.status === 'open' || !['paid', 'pending_cod'].includes(data.paymentStatus)) throw new HttpsError('failed-precondition', 'A delivery partner must arrive and the order must be clear for handoff before you can confirm pickup.');
     const eventRef = bookingRef.collection('events').doc(`merchant_pickup_${data.driverId}`), event = await transaction.get(eventRef);
     if (event.exists) return { confirmed: true };
     const now = new Date().toISOString();
@@ -1030,15 +1029,14 @@ exports.sendBookingMessage = onCall({ operation: 'sendBookingMessage', region: R
     if (['completed', 'delivered', 'cancelled'].includes(booking.status)) throw new HttpsError('failed-precondition', 'This conversation is closed. Use support for further help.');
     if (actor?.suspended === true || actor?.disabled === true) throw new HttpsError('permission-denied', 'Account is suspended or disabled.');
 
-    const isDemo = uid.startsWith('demo-');
-    const isCustomer = booking.customerId === uid || (isDemo && uid === 'demo-customer');
-    const assignedDriver = (booking?.driverId === uid && actor?.role === 'driver' && profile.data()?.status === 'verified') || (isDemo && uid === 'demo-driver');
-    const isMerchant = (actor && merchantHasPermission(
+    const isCustomer = booking.customerId === uid;
+    const assignedDriver = Boolean(booking?.driverId === uid && actor?.role === 'driver' && profile.data()?.status === 'verified');
+    const isMerchant = Boolean(actor && merchantHasPermission(
       actor,
       booking.merchantId,
       booking.serviceType === 'food' ? 'restaurant' : booking.serviceType === 'grocery' ? 'grocery' : null,
       'orders'
-    )) || (isDemo && uid === 'demo-merchant');
+    ));
     const isAdmin = actor?.role === 'admin';
 
     if (!isCustomer && !assignedDriver && !isMerchant && !isAdmin) {
@@ -1268,39 +1266,36 @@ exports.acceptDriverBooking = onCall({ operation: 'acceptDriverBooking', region:
     const bookingRef = db.doc(`bookings/${bookingId}`);
     const driverRef = db.doc(`driver_profiles/${uid}`);
     const [booking, driver, account, offer, eligibility] = await Promise.all([transaction.get(bookingRef), transaction.get(driverRef), transaction.get(db.doc(`users/${uid}`)), transaction.get(db.doc(`driver_offers/${uid}/offers/${bookingId}`)), transaction.get(db.doc(`driver_eligibility/${uid}`))]);
-    const isDemo = uid.startsWith('demo-');
-    if (!isDemo && (account.data()?.role !== 'driver' || driver.data()?.status !== 'verified' || driver.data()?.online !== true || driver.data()?.locationConsent !== true || eligibility.data()?.status === 'expired')) throw new HttpsError('permission-denied', 'Only currently eligible verified online drivers with location consent can accept jobs.');
-    if (!isDemo && driver.data()?.activeBookingId) throw new HttpsError('failed-precondition', 'Complete your current job before accepting another.');
+    if (account.data()?.role !== 'driver' || driver.data()?.status !== 'verified' || driver.data()?.online !== true || driver.data()?.locationConsent !== true || eligibility.data()?.status === 'expired') throw new HttpsError('permission-denied', 'Only currently eligible verified online drivers with location consent can accept jobs.');
+    if (driver.data()?.activeBookingId) throw new HttpsError('failed-precondition', 'Complete your current job before accepting another.');
     const data = booking.data();
     if (data?.paymentStatus === 'pending_cod' && Number(driver.data()?.codCashInHandCents || 0) >= 200000) throw new HttpsError('failed-precondition', 'Cash on delivery ceiling reached. Remit cash collected to operations before accepting new cash orders.');
     const fleetAssignment = data?.transportAssignment;
-    if ((!offer.exists && !isDemo) || (offer.exists && offer.data().expiresAt.toMillis() <= Date.now()) || (offer.exists && offer.data().bookingVersion !== (data?.updatedAt || data?.createdAt)) || !data || (!isDemo && pickupEligibility(driver.data(), data) === null)) throw new HttpsError('failed-precondition', 'This pickup offer expired or your location is stale. Refresh offers.');
+    if (!offer.exists || offer.data().expiresAt.toMillis() <= Date.now() || offer.data().bookingVersion !== (data?.updatedAt || data?.createdAt) || !data || pickupEligibility(driver.data(), data) === null) throw new HttpsError('failed-precondition', 'This pickup offer expired or your location is stale. Refresh offers.');
     const dispatchable = data && (['food', 'grocery'].includes(data.serviceType) ? data.status === 'ready' : data.status === 'pending');
-    if (!dispatchable || ['parcel', 'transport'].includes(data.serviceType) && !parcelPickupTimeAvailable(data.details) || data.driverId || data.exception?.status === 'open' || !['paid', 'pending_cod'].includes(data.paymentStatus) || (!isDemo && driver.data()?.rejectedBookingIds?.includes(bookingId))) throw new HttpsError('failed-precondition', 'This job is no longer available or its requested pickup time is unconfirmed or not yet due.');
-    if (!isDemo && data.serviceType === 'ride' && data.details?.vehicleType !== driver.data().vehicleType) throw new HttpsError('failed-precondition', 'Your verified vehicle does not match this ride.');
+    if (!dispatchable || ['parcel', 'transport'].includes(data.serviceType) && !parcelPickupTimeAvailable(data.details) || data.driverId || data.exception?.status === 'open' || !['paid', 'pending_cod'].includes(data.paymentStatus) || driver.data()?.rejectedBookingIds?.includes(bookingId)) throw new HttpsError('failed-precondition', 'This job is no longer available or its requested pickup time is unconfirmed or not yet due.');
+    if (data.serviceType === 'ride' && data.details?.vehicleType !== driver.data().vehicleType) throw new HttpsError('failed-precondition', 'Your verified vehicle does not match this ride.');
     // A customer's vehicle class is not the carrier's equipment class.
     // Operations must approve transport equipment separately from ordinary ride vehicles.
     if (data.serviceType === 'transport') {
       const capabilities = driver.data()?.transportCapabilities;
-      if (!isDemo && !carrierSuitable(capabilities, data.details)) throw new HttpsError('failed-precondition', 'The carrier equipment is not approved or cannot carry this vehicle safely.');
+      if (!carrierSuitable(capabilities, data.details)) throw new HttpsError('failed-precondition', 'The carrier equipment is not approved or cannot carry this vehicle safely.');
       if (data.transportOperatorId) {
-        if (!isDemo && (fleetAssignment?.status !== 'offered' || fleetAssignment.driverId !== uid || !fleetAssignment.vehicleId || driver.data()?.transportOperatorId !== data.transportOperatorId)) throw new HttpsError('permission-denied', 'This fleet booking was not assigned to your linked driver account.');
+        if (fleetAssignment?.status !== 'offered' || fleetAssignment.driverId !== uid || !fleetAssignment.vehicleId || driver.data()?.transportOperatorId !== data.transportOperatorId) throw new HttpsError('permission-denied', 'This fleet booking was not assigned to your linked driver account.');
         const [member, vehicle] = await Promise.all([
           transaction.get(db.doc(`transport_operators/${data.transportOperatorId}/drivers/${uid}`)),
           transaction.get(db.doc(`transport_operators/${data.transportOperatorId}/vehicles/${fleetAssignment.vehicleId}`))
         ]);
-        if (!isDemo && (!member.exists || member.data()?.status !== 'active' || !vehicle.exists || vehicle.data()?.status !== 'approved')) throw new HttpsError('failed-precondition', 'The linked driver or fleet vehicle is no longer approved.');
+        if (!member.exists || member.data()?.status !== 'active' || !vehicle.exists || vehicle.data()?.status !== 'approved') throw new HttpsError('failed-precondition', 'The linked driver or fleet vehicle is no longer approved.');
       } else if (fleetAssignment?.status === 'offered') {
         throw new HttpsError('failed-precondition', 'This fleet assignment needs an operator link. Refresh offers.');
       }
     }
-    if (!isDemo && !driver.data()?.supportedServices?.includes(data.serviceType)) throw new HttpsError('permission-denied', 'Your account is not approved for this service. Contact operations.');
-    const driverName = account.data()?.name || (isDemo ? 'Rajesh Kumar (Partner)' : 'Delivery Partner');
+    if (!driver.data()?.supportedServices?.includes(data.serviceType)) throw new HttpsError('permission-denied', 'Your account is not approved for this service. Contact operations.');
+    const driverName = account.data()?.name || 'Delivery Partner';
     transaction.update(bookingRef, { driverId: uid, driverName, arrivedAtPickup: FieldValue.delete(), merchantPickupConfirmedAt: FieldValue.delete(), status: 'accepted', updatedAt: new Date().toISOString(), ...(data.serviceType === 'transport' && data.transportOperatorId ? { transportVehicleId: fleetAssignment.vehicleId, 'transportAssignment.status': 'accepted', 'transportAssignment.acceptedAt': new Date().toISOString() } : {}) });
     if (driver.exists) {
       transaction.update(driverRef, { activeBookingId: bookingId, recentRejections: [] });
-    } else if (isDemo) {
-      transaction.set(driverRef, { activeBookingId: bookingId, driverId: uid, status: 'verified', online: true });
     }
     transaction.create(db.doc(`bookings/${bookingId}/events/accepted_${uid}`), { stage: 'partner_assigned', actorRole: 'driver', actorId: uid, createdAt: new Date().toISOString() });
     return { status: 'accepted' };
@@ -1320,33 +1315,30 @@ exports.advanceDriverBooking = onCall({ operation: 'advanceDriverBooking', regio
     const [booking, driver, code, account, eligibility, proof, merchantReadyEvent, merchantPickupEvent, pickupInspection, deliveryInspection, settlementOrder] = await Promise.all([transaction.get(bookingRef), transaction.get(driverRef), transaction.get(codeRef), transaction.get(db.doc(`users/${uid}`)), transaction.get(db.doc(`driver_eligibility/${uid}`)), transaction.get(proofRef), transaction.get(bookingRef.collection('events').doc('merchant_ready')), transaction.get(bookingRef.collection('events').doc(`merchant_pickup_${uid}`)), transaction.get(pickupInspectionRef), transaction.get(deliveryInspectionRef), transaction.get(settlementOrderRef)]);
     const data = booking.data();
     const completedReplay = data?.driverId === uid && data.status === 'completed' && next === 'completed';
-    const isDemo = uid.startsWith('demo-');
-    if (!data || data.driverId !== uid || (!isDemo && (account.data()?.role !== 'driver' || account.data()?.suspended === true || account.data()?.disabled === true || (driver.data()?.status !== 'verified' && !completedReplay)))) throw new HttpsError('permission-denied', 'Verified driver access and assignment are required for this job.');
+    if (!data || data.driverId !== uid || (account.data()?.role !== 'driver' || account.data()?.suspended === true || account.data()?.disabled === true || (driver.data()?.status !== 'verified' && !completedReplay))) throw new HttpsError('permission-denied', 'Verified driver access and assignment are required for this job.');
     if (!['paid', 'pending_cod'].includes(data.paymentStatus)) throw new HttpsError('failed-precondition', 'This job is in payment or cancellation review. Contact operations.');
     if (data.exception?.status === 'open') throw new HttpsError('failed-precondition', 'Operations must resolve the reported booking problem first.');
     if (data.status === 'completed' && next === 'completed') return { status: 'completed' };
     if (data.status === next) return { status: next };
-    if (next === 'preparing' && !isDemo && (data.details?.pickupLocation || data.serviceType === 'ride')) {
+    if (next === 'preparing' && (data.details?.pickupLocation || data.serviceType === 'ride')) {
       if (pickupEligibility(driver.data(), data, Date.now(), 0.3) === null) {
         throw new HttpsError('failed-precondition', 'Move within 300 metres of the pickup location and wait for a fresh, accurate location before marking arrival.');
       }
     }
-    if (next === 'arrived_at_destination' && !isDemo && ['ride', 'transport'].includes(data.serviceType) && destinationEligibility(driver.data(), data, Date.now(), 0.3) === null) throw new HttpsError('failed-precondition', 'Move within 300 metres of the destination and wait for a fresh, accurate location before marking arrival.');
+    if (next === 'arrived_at_destination' && ['ride', 'transport'].includes(data.serviceType) && destinationEligibility(driver.data(), data, Date.now(), 0.3) === null) throw new HttpsError('failed-precondition', 'Move within 300 metres of the destination and wait for a fresh, accurate location before marking arrival.');
     if (data.serviceType === 'transport' && ['transit', 'completed'].includes(next)) {
       try { requireTransportInspection(next === 'transit' ? 'pickup' : 'delivery', (next === 'transit' ? pickupInspection : deliveryInspection).data()); }
       catch (error) { throw new HttpsError('failed-precondition', error.message); }
     }
     if (next === 'transit') {
-      if (!isDemo) {
-        requireMerchantReady(data.serviceType, merchantReadyEvent.exists);
-        requireMerchantPickup(data.serviceType, merchantPickupEvent.exists);
-      }
+      requireMerchantReady(data.serviceType, merchantReadyEvent.exists);
+      requireMerchantPickup(data.serviceType, merchantPickupEvent.exists);
     }
     const transition = driverTransition(data.serviceType, data.status, next);
     if (transition.requiresPickupCode) {
       const confirmation = code.data();
       const expectedPickup = confirmation?.pickupCode || data?.pickupCode || data?.pickupOtp;
-      if (!expectedPickup && !isDemo) throw new HttpsError('failed-precondition', 'The pickup code needs operations review.');
+      if (!expectedPickup) throw new HttpsError('failed-precondition', 'The pickup code needs operations review.');
       if (confirmation?.pickupLockedUntil?.toMillis() > Date.now()) throw new HttpsError('resource-exhausted', 'Too many incorrect pickup codes. Wait five minutes.');
       if (expectedPickup && String(request.data?.otp || '') !== String(expectedPickup)) {
         const attempts = confirmation?.pickupLockedUntil ? 1 : Number(confirmation?.pickupAttempts || 0) + 1;
@@ -1360,7 +1352,7 @@ exports.advanceDriverBooking = onCall({ operation: 'advanceDriverBooking', regio
       }
     }
     if (next === 'completed') {
-      if (!code.exists && !isDemo) throw new HttpsError('failed-precondition', 'The delivery code is unavailable. Contact operations.');
+      if (!code.exists) throw new HttpsError('failed-precondition', 'The delivery code is unavailable. Contact operations.');
       const confirmation = code.data();
       const expectedOtp = confirmation?.code || data?.otp || data?.deliveryOtp;
       if (confirmation?.lockedUntil?.toMillis() > Date.now()) throw new HttpsError('resource-exhausted', 'Too many incorrect codes. Wait five minutes or contact support.');
