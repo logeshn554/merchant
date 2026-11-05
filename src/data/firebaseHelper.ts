@@ -1090,3 +1090,36 @@ export async function listAdminDriverProfiles(options?: { limit?: number; status
 }
 
 
+
+export interface UserPartnerApplication {
+  applicationId: string;
+  type: string;
+  name: string;
+  phone: string;
+  city: string;
+  status: string;
+  revision?: number;
+  feedback?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function listenToUserPartnerApplications(
+  userId: string,
+  callback: (applications: UserPartnerApplication[]) => void,
+  onError?: (error: unknown) => void
+) {
+  const records = collection(db, 'partner_applications');
+  return onSnapshot(
+    query(records, where('userId', '==', userId), limit(10)),
+    snapshot => {
+      const rows = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        applicationId: doc.id
+      })) as UserPartnerApplication[];
+      rows.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      callback(rows);
+    },
+    onError
+  );
+}

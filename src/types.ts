@@ -14,6 +14,8 @@ export interface UserProfile {
   /** Partner accounts: pending_approval | pending_kyc | approved | verified | rejected | active */
   approvalStatus?: 'pending_approval' | 'pending_kyc' | 'approved' | 'verified' | 'rejected' | 'active';
   approvalReason?: string;
+  suspended?: boolean;
+  disabled?: boolean;
   createdAt: string;
   walletBalance?: number;
   photoURL?: string;

@@ -8,7 +8,18 @@ import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from './firebase';
 import { initializeNativeNotifications, nativeSignOut } from './nativeNotifications';
 import AuthScreen, { authMessage } from './components/AuthScreen';
-import { getOrCreateUserProfile, listenToAccountProfile, listenToBookings, listenToCustomerBookings, listenToDriverBookings, listenToDriverProfiles, listenToMerchantBookings, reverseServiceLocation } from './data/firestoreHelper';
+import {
+  getOrCreateUserProfile,
+  listenToAccountProfile,
+  listenToBookings,
+  listenToCustomerBookings,
+  listenToDriverBookings,
+  listenToDriverProfiles,
+  listenToMerchantBookings,
+  reverseServiceLocation,
+  listenToUserPartnerApplications,
+  type UserPartnerApplication
+} from './data/firestoreHelper';
 import { useCurrentLocation } from './location/useCurrentLocation';
 import { Booking, DriverProfile, UserProfile } from './types';
 import { isLegacyMerchantType } from './domain/merchant';
@@ -23,6 +34,8 @@ const MerchantPortal = appAudience === 'merchant' ? lazy(() => import('./compone
 const DriverApp = appAudience === 'driver' ? lazy(() => import('./components/DriverApp')) : null;
 const TransportOperatorDashboard = appAudience === 'merchant' ? lazy(() => import('./components/TransportOperatorDashboard')) : null;
 const PartnerApplicationPanel = appAudience !== 'customer' ? lazy(() => import('./components/PartnerApplicationPanel')) : null;
+const MerchantRegistrationWizard = appAudience === 'merchant' ? lazy(() => import('./components/MerchantRegistrationWizard')) : null;
+const MerchantStatusScreen = appAudience === 'merchant' ? lazy(() => import('./components/MerchantStatusScreen')) : null;
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState<User | UserProfile | null>(null);
@@ -37,6 +50,8 @@ export default function App() {
   const accountUid = useRef<string | null>(null);
   const locationHook = useCurrentLocation();
   const [detectedAddress, setDetectedAddress] = useState<string>('');
+  const [merchantApplications, setMerchantApplications] = useState<UserPartnerApplication[]>([]);
+  const [forceRegistrationView, setForceRegistrationView] = useState(false);
 
   useEffect(() => {
     if (!currentUser?.uid || appAudience !== 'customer') return;
@@ -57,7 +72,7 @@ export default function App() {
   }, [currentUser?.uid]);
 
   useEffect(() => {
-        let disposed = false;
+    let disposed = false;
     let stop: (() => void) | undefined;
     void initializeNativeNotifications().then(cleanup => {
       if (disposed) cleanup();
@@ -120,6 +135,15 @@ export default function App() {
   }, [currentUser?.uid, Boolean(userProfile)]);
 
   useEffect(() => {
+    if (!currentUser?.uid || appAudience !== 'merchant') return;
+    return listenToUserPartnerApplications(
+      currentUser.uid,
+      apps => setMerchantApplications(apps),
+      err => console.warn('Partner applications listener:', err)
+    );
+  }, [currentUser?.uid]);
+
+  useEffect(() => {
     if (!currentUser || !userProfile) return;
     setBookings([]);
     setDrivers([]);
@@ -173,7 +197,6 @@ export default function App() {
     return <AuthScreen />;
   }
 
-  
   if (bookingError) {
     return (
       <div className="auth-shell">
@@ -221,6 +244,58 @@ export default function App() {
 
   // 2. Partner Onboarding / Unassigned / Denied
   if (workspace === 'application' || workspace === 'denied' || workspace === 'unassigned') {
+    // Dedicated Merchant Flow: Wizard & Status Tracker
+    if (appAudience === 'merchant') {
+      if (userProfile.suspended || userProfile.disabled) {
+        return (
+          <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm font-semibold text-slate-500">Checking account status…</div>}>
+            {MerchantStatusScreen && (
+              <MerchantStatusScreen
+                userSuspended={true}
+                onSignOut={() => void nativeSignOut()}
+                onRefresh={() => setRetry(v => v + 1)}
+              />
+            )}
+          </Suspense>
+        );
+      }
+
+      if (merchantApplications.length > 0 && !forceRegistrationView) {
+        return (
+          <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm font-semibold text-slate-500">Opening application status…</div>}>
+            {MerchantStatusScreen && (
+              <MerchantStatusScreen
+                application={merchantApplications[0]}
+                onContinueDraft={() => setForceRegistrationView(true)}
+                onSignOut={() => void nativeSignOut()}
+                onRefresh={() => setRetry(v => v + 1)}
+                onEnterDashboard={() => setRetry(v => v + 1)}
+              />
+            )}
+          </Suspense>
+        );
+      }
+
+      return (
+        <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center text-sm font-semibold text-slate-500">Opening onboarding wizard…</div>}>
+          {MerchantRegistrationWizard ? (
+            <MerchantRegistrationWizard
+              userId={currentUser.uid}
+              initialPhone={userProfile.phone || (currentUser as User).phoneNumber || ''}
+              initialName={userProfile.name}
+              onApplicationSubmitted={() => {
+                setForceRegistrationView(false);
+              }}
+              onCancel={merchantApplications.length > 0 ? () => setForceRegistrationView(false) : undefined}
+            />
+          ) : (
+            <p role="alert">Merchant onboarding is not included in this app build.</p>
+          )}
+        </Suspense>
+      );
+    }
+
+    // Driver & Other Partner fallback
     return (
       <main className="partner-onboarding">
         <header>

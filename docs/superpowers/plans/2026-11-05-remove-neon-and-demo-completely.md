@@ -43,3 +43,4 @@
 - Run `npm test` (all UI tests and Functions tests).
 - Run `npm run build` (production build and audience check).
 - Run `node scripts/run-rules-tests.mjs` (Firestore rules emulator).
+
