@@ -10,7 +10,6 @@ class MerchantSupportScreen extends ConsumerStatefulWidget {
 }
 
 class _MerchantSupportScreenState extends ConsumerState<MerchantSupportScreen> {
-  final ApiClient _apiClient = ApiClient();
   bool _isLoading = true;
   List<dynamic> _tickets = [];
 
@@ -23,7 +22,8 @@ class _MerchantSupportScreenState extends ConsumerState<MerchantSupportScreen> {
   Future<void> _load() async {
     setState(() => _isLoading = true);
     try {
-      final res = await _apiClient.getUserSupportTickets(role: 'MERCHANT_ADMIN');
+      final client = ref.read(apiClientProvider);
+      final res = await client.getUserSupportTickets(role: 'MERCHANT_ADMIN');
       if (mounted) setState(() { _tickets = res; _isLoading = false; });
     } catch (_) {
       if (mounted) setState(() => _isLoading = false);
@@ -54,7 +54,8 @@ class _MerchantSupportScreenState extends ConsumerState<MerchantSupportScreen> {
     );
 
     if (ok == true && mounted) {
-      await _apiClient.createSupportTicket({
+      final client = ref.read(apiClientProvider);
+      await client.createSupportTicket({
         'category': 'MERCHANT_QUERY',
         'subject': subCtrl.text.trim(),
         'description': descCtrl.text.trim(),

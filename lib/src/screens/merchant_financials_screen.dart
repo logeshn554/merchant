@@ -10,7 +10,6 @@ class MerchantFinancialsScreen extends ConsumerStatefulWidget {
 }
 
 class _MerchantFinancialsScreenState extends ConsumerState<MerchantFinancialsScreen> {
-  final ApiClient _apiClient = ApiClient();
   bool _isLoading = true;
   double _grossSales = 0.0;
   double _commission = 0.0;
@@ -26,8 +25,9 @@ class _MerchantFinancialsScreenState extends ConsumerState<MerchantFinancialsScr
   Future<void> _load() async {
     setState(() => _isLoading = true);
     try {
-      final overview = await _apiClient.getMerchantFinancialOverview();
-      final settles = await _apiClient.getMerchantSettlements();
+      final client = ref.read(apiClientProvider);
+      final overview = await client.getMerchantFinancialOverview();
+      final settles = await client.getMerchantSettlements();
       if (mounted) {
         setState(() {
           _grossSales = (overview['totalGrossSalesInr'] as num?)?.toDouble() ?? 0.0;

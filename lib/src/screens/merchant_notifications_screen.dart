@@ -10,7 +10,6 @@ class MerchantNotificationsScreen extends ConsumerStatefulWidget {
 }
 
 class _MerchantNotificationsScreenState extends ConsumerState<MerchantNotificationsScreen> {
-  final ApiClient _apiClient = ApiClient();
   bool _isLoading = true;
   List<dynamic> _notifications = [];
 
@@ -23,7 +22,8 @@ class _MerchantNotificationsScreenState extends ConsumerState<MerchantNotificati
   Future<void> _load() async {
     setState(() => _isLoading = true);
     try {
-      final res = await _apiClient.getNotifications(role: 'MERCHANT_ADMIN');
+      final client = ref.read(apiClientProvider);
+      final res = await client.getNotifications(role: 'MERCHANT_ADMIN');
       if (mounted) {
         setState(() {
           _notifications = (res['notifications'] as List<dynamic>?) ?? [];
