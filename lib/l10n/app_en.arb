@@ -1,0 +1,11 @@
+{
+  "@@locale": "en",
+  "appTitle": "AllGo Merchant",
+  "dashboard": "Merchant Dashboard",
+  "menuCatalog": "Menu & Catalog",
+  "bulkCsvUpload": "Bulk CSV Menu Upload",
+  "operatingHours": "Operating Hours",
+  "financialSettlements": "Settlements & GST",
+  "substitutionRequests": "Item Substitutions",
+  "languagePicker": "Select Language"
+}

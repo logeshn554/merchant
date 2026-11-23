@@ -1,0 +1,11 @@
+{
+  "@@locale": "hi",
+  "appTitle": "ऑलगो मर्चेंट",
+  "dashboard": "मर्चेंट डैशबोर्ड",
+  "menuCatalog": "मेनू और कैटलॉग",
+  "bulkCsvUpload": "थोक CSV मेनू अपलोड",
+  "operatingHours": "कार्य समय",
+  "financialSettlements": "भुगतान एवं जीएसटी",
+  "substitutionRequests": "आइटम प्रतिस्थापन अनुरोध",
+  "languagePicker": "भाषा चुनें"
+}

@@ -1,0 +1,30 @@
+name: merchant_mobile
+description: AllGo Merchant Mobile App (Restaurants, Dark Stores, Cloud Kitchens)
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+  flutter: '>=3.16.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.1
+  firebase_core: ^3.0.0
+  firebase_auth: ^5.0.0
+  firebase_messaging: ^15.0.0
+  firebase_crashlytics: ^4.0.0
+  firebase_analytics: ^11.0.0
+  firebase_remote_config: ^5.0.0
+  firebase_performance: ^0.10.0
+  allgo_mobile_shared:
+    path: ../../packages/mobile_shared
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

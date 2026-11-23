@@ -1,0 +1,11 @@
+{
+  "@@locale": "ta",
+  "appTitle": "ஆல்கோ வணிகர்",
+  "dashboard": "வணிகர் பலகை",
+  "menuCatalog": "பட்டியல் & பொருட்கள்",
+  "bulkCsvUpload": "CSV மூலம் மொத்தப் பொருட்கள் பதிவேற்றம்",
+  "operatingHours": "செயல்படும் நேரம்",
+  "financialSettlements": "பரிவர்த்தனை & ஜிஎஸ்டி",
+  "substitutionRequests": "மாற்றுப் பொருட்கள் கோரிக்கை",
+  "languagePicker": "மொழியைத் தேர்ந்தெடுக்கவும்"
+}
