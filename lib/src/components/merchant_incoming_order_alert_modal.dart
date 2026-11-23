@@ -166,7 +166,7 @@ class _MerchantIncomingOrderAlertModalState extends State<MerchantIncomingOrderA
                       ],
                     ),
                     const Divider(height: 20),
-                    Text('Customer: ${widget.customerName}', style: const TextStyle(color: Colors.black8line)),
+                    Text('Customer: ${widget.customerName}', style: const TextStyle(color: Colors.black87)),
                     const SizedBox(height: 8),
                     const Text('Items:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                     const SizedBox(height: 4),

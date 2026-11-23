@@ -1,24 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:allgo_mobile_shared/allgo_mobile_shared.dart';
-import 'package:allgo_merchant_mobile/src/components/merchant_live_orders_tab.dart';
+import 'package:merchant_mobile/src/components/merchant_live_orders_tab.dart';
 
 void main() {
   group('Merchant Order Flow Tests', () {
     testWidgets('MerchantLiveOrdersTab displays order list and responds to accept/reject', (tester) async {
       final mockOrder = MerchantOrder(
         id: 'ord_merch_test_1',
-        orderNumber: 'AG-2026-8888',
+        subOrderNumber: 'AG-2026-8888',
         customerName: 'Priya Raman',
         customerPhone: '+919123456789',
         status: 'PLACED',
-        totalAmount: 450.0,
-        itemCount: 2,
-        createdAt: DateTime.now(),
+        verticalType: 'FOOD',
+        itemsTotalInr: 450.0,
+        packagingFeeInr: 20.0,
+        merchantCommissionInr: 45.0,
+        merchantNetPayoutInr: 425.0,
+        taxTotalInr: 22.5,
+        prepTimeMinutes: 20,
+        createdAt: DateTime.now().toIso8601String(),
         items: const [
-          OrderItem(name: 'Paneer Butter Masala', quantity: 1, price: 250.0),
-          OrderItem(name: 'Butter Naan', quantity: 2, price: 100.0),
+          MerchantOrderItem(
+            itemId: 'item_1',
+            itemName: 'Paneer Butter Masala',
+            quantity: 1,
+            unitPriceInr: 250.0,
+            totalPriceInr: 250.0,
+          ),
+          MerchantOrderItem(
+            itemId: 'item_2',
+            itemName: 'Butter Naan',
+            quantity: 2,
+            unitPriceInr: 100.0,
+            totalPriceInr: 200.0,
+          ),
         ],
       );
 
